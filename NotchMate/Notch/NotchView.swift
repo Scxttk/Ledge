@@ -163,13 +163,19 @@ private struct ExpandedView: View {
     @ObservedObject var shelf: FileShelfModel
     @ObservedObject var capture: ObsidianCapture
 
-    /// Tab pages crossfade in place instead of sliding sideways. A sliding pager
-    /// looked right in pure SwiftUI, but on macOS animated text runs and
+    /// Tab pages fade while nudging a short step in the swipe direction. A real
+    /// sliding pager crossed the island's edge: on macOS, animated text runs and
     /// AppKit-backed views (the shelf's NSScrollView, the capture NSTextField)
-    /// get promoted to layers that ignore `clipped()`/`clipShape` — so sliding
-    /// content visibly crossed the island's edge. A fade never leaves the bounds.
-    private static let pageTransition: AnyTransition = .opacity
-        .combined(with: .scale(scale: 0.98))
+    /// get promoted to layers that ignore `clipped()`/`clipShape`. The nudge
+    /// distance stays below the island's 28pt content padding, so even unclipped
+    /// layers can never reach the edge — direction feel without the bug.
+    private var pageTransition: AnyTransition {
+        let step = 24 * viewModel.lastTabDirection
+        return .asymmetric(
+            insertion: .offset(x: step).combined(with: .opacity),
+            removal: .offset(x: -step).combined(with: .opacity)
+        )
+    }
 
     var body: some View {
         VStack(spacing: 8) {
@@ -180,13 +186,13 @@ private struct ExpandedView: View {
                 switch viewModel.selectedTab {
                 case .music:
                     NowPlayingView(nowPlaying: nowPlaying)
-                        .transition(Self.pageTransition)
+                        .transition(pageTransition)
                 case .files:
                     ShelfView(shelf: shelf)
-                        .transition(Self.pageTransition)
+                        .transition(pageTransition)
                 case .capture:
                     CaptureView(capture: capture, viewModel: viewModel)
-                        .transition(Self.pageTransition)
+                        .transition(pageTransition)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)

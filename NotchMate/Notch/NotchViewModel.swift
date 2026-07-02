@@ -8,7 +8,18 @@ final class NotchViewModel: ObservableObject {
     }
 
     @Published var isExpanded: Bool = false
-    @Published var selectedTab: Tab = .music
+    @Published var selectedTab: Tab = .music {
+        didSet {
+            let all = Tab.allCases
+            guard let old = all.firstIndex(of: oldValue),
+                  let new = all.firstIndex(of: selectedTab), old != new else { return }
+            lastTabDirection = new > old ? 1 : -1
+        }
+    }
+
+    /// +1 when the last tab change moved right, -1 when left — read by the page
+    /// transition so entering/leaving pages nudge in the swipe direction.
+    private(set) var lastTabDirection: CGFloat = 1
 
     /// While true (e.g. the capture field is focused) the island won't auto-
     /// collapse when the cursor leaves it — otherwise typing would dismiss it.
