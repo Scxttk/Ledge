@@ -4,66 +4,53 @@
 
 <h1 align="center">NotchMate</h1>
 
-<p align="center">A Dynamic-Island-style interactive notch for your Mac's menu bar.</p>
+<p align="center">The notch on your Mac can do more than hide a webcam.</p>
 
-NotchMate is a macOS menu-bar accessory app (no Dock icon) that draws an interactive, animated notch at the top center of the screen — inspired by the iPhone's Dynamic Island.
+NotchMate turns the top center of your screen into a small Dynamic Island: hover over it and it expands into media controls and a file shelf; the rest of the time it quietly shows what's going on (charging started, AirPods connected, volume changed). It lives in the menu bar, has no Dock icon, and works on Macs without a physical notch too — it just draws its own.
 
-## Features
+I built this for my own setup, so some choices are opinionated. The UI is German. The quick-capture feature assumes you use Obsidian and write daily notes. If that's not you, the media controls and the shelf don't care.
 
-- **Now Playing** — media controls for Spotify and Apple Music, including local favorites. Uses scriptable Apple Events (AppleScript), since Apple sealed the private MediaRemote framework on macOS 15.4+.
-- **File shelf** — drag files onto the notch to stage them for later drag-out. Files are tracked via security bookmarks, so they survive moves and relaunches.
-- **Live activities** — transient pill notifications for charging state, audio-route changes, and received files, with priorities and auto-dismiss.
-- **Volume & brightness HUD** — replaces Apple's on-screen display with an in-notch HUD. Hardware keys are captured with a CGEvent tap (requires the Accessibility permission); volume is driven through public CoreAudio APIs.
-- **Obsidian quick capture** — a global hotkey appends notes silently to the daily note of a vault you pick in Settings. The quick-launch button opens a terminal with Claude Code in that same vault.
+## What it does
 
-## Requirements
+The part I use most: **volume and brightness keys show up in the notch instead of Apple's clunky OSD overlay**. NotchMate grabs the hardware keys with a CGEvent tap, adjusts volume through CoreAudio itself, and Apple's gray box never appears. This needs the Accessibility permission and is the feature worth installing for.
 
-- **macOS 14.0 (Sonoma) or newer.** A physical notch is not required — the app draws its own.
-- Spotify and/or Apple Music for the now-playing controls (optional).
-- Obsidian for the quick-capture feature (optional; the vault folder is chosen in Settings).
-- UI strings are currently German.
+The rest:
 
-## Installation (prebuilt app)
+- Now-playing controls for Spotify and Apple Music. This works through plain AppleScript, because Apple sealed the private MediaRemote framework in macOS 15.4 and broke every notch app that relied on it. AppleScript is slower (the app polls every 5 seconds and interpolates the playback position in between), but it keeps working.
+- A file shelf: drop files onto the notch, drag them out later. Files are tracked with bookmarks, so they survive renames and relaunches.
+- Obsidian quick capture: ⌥⌘Space, type a thought, and it lands under a heading in today's daily note — silently, without Obsidian even running. Point it at your vault in Settings.
+- Small live activities for charging, audio-route changes, and received files.
 
-1. Download `NotchMate.zip` from the [latest release](../../releases/latest) and unzip it.
-2. Move `NotchMate.app` to `/Applications`.
-3. **First launch:** the app is ad-hoc signed and not notarized, so Gatekeeper will refuse to open it. Either allow it under *System Settings → Privacy & Security → "Open Anyway"* after the first attempt, or remove the quarantine flag once in Terminal:
+## Installing it
 
-   ```sh
-   xattr -d com.apple.quarantine /Applications/NotchMate.app
-   ```
+Grab `NotchMate.zip` from the [latest release](../../releases/latest), unzip, drop `NotchMate.app` into `/Applications`.
 
-4. Grant permissions when prompted (see below). The app registers itself as a login item.
+macOS will refuse to open it the first time — the app is ad-hoc signed, because I don't pay Apple 99 €/year for a hobby project. Two ways past that:
 
-### Permissions
+```sh
+xattr -d com.apple.quarantine /Applications/NotchMate.app
+```
 
-| Permission | Needed for | Prompted |
-|---|---|---|
-| Automation (Apple Events) | Controlling Spotify / Apple Music | on first playback query |
-| Accessibility | "Volume/brightness keys only in the notch" (`MediaKeyTap`) | when the feature is enabled |
+or open it once, let it fail, then go to *System Settings → Privacy & Security* and click *Open Anyway*.
 
-Everything else (file shelf, live activities, quick capture) works without extra permissions.
+You need macOS 14 or newer. On first launch the app registers itself as a login item and asks for permissions as you touch the features: Automation when it first talks to Spotify/Music, Accessibility if you enable the volume-keys-in-notch option. Nothing else needs a grant.
 
-## Build from source
+One warning from experience: the Accessibility grant is pinned to the code signature. If you build the app yourself and reinstall, macOS silently keeps the checkbox ticked while the permission is actually dead — remove and re-add it in System Settings when the volume keys stop being captured.
 
-- Xcode 15+. No external dependencies — a single Xcode target using only system frameworks.
+## Building it
 
 ```sh
 xcodebuild -project NotchMate.xcodeproj -scheme NotchMate -configuration Debug build
 ```
 
-Or open `NotchMate.xcodeproj` and hit ⌘R.
+Or open `NotchMate.xcodeproj` in Xcode 15+ and hit ⌘R. There are no dependencies to fetch — no SPM, no pods, only system frameworks.
 
-## Caveats
+Fair warning on internals: brightness control resolves the private `DisplayServices` framework at runtime via `dlopen`. If Apple ever removes those symbols, the feature turns itself off and macOS handles the brightness keys again — that's the deal with private APIs, and I took it knowingly. The app is also not sandboxed; it couldn't do half of the above if it were.
 
-- The Accessibility grant is pinned to the code signature; ad-hoc rebuilds invalidate it (re-grant after reinstalling).
-- Brightness control uses the private `DisplayServices` framework, resolved dynamically — if Apple removes the symbols, the feature degrades gracefully and macOS keeps handling the brightness keys.
-- The app is not sandboxed and registers itself as a login item (`SMAppService`).
+## The icon
 
-## App icon
-
-The icon is generated programmatically: `swift Tools/GenerateAppIcon.swift` renders the 1024 px master (the Obsidian logo is © Obsidian.md, used as a nod to the quick-capture integration).
+Generated by a script, not drawn: `swift Tools/GenerateAppIcon.swift` renders the 1024 px master. The gem in the notch is the Obsidian logo (© Obsidian.md) — a nod to the quick-capture integration. Icon style borrowed shamelessly from the display-with-a-notch look of apps like Dynamic Lake and Alcove.
 
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE). Do whatever you want with it.
