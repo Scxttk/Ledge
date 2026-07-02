@@ -14,11 +14,39 @@ NotchMate is a macOS menu-bar accessory app (no Dock icon) that draws an interac
 - **File shelf** — drag files onto the notch to stage them for later drag-out. Files are tracked via security bookmarks, so they survive moves and relaunches.
 - **Live activities** — transient pill notifications for charging state, audio-route changes, and received files, with priorities and auto-dismiss.
 - **Volume & brightness HUD** — replaces Apple's on-screen display with an in-notch HUD. Hardware keys are captured with a CGEvent tap (requires the Accessibility permission); volume is driven through public CoreAudio APIs.
-- **Obsidian quick capture** — a global hotkey appends notes silently to your daily note.
+- **Obsidian quick capture** — a global hotkey appends notes silently to the daily note of a vault you pick in Settings. The quick-launch button opens a terminal with Claude Code in that same vault.
 
-## Requirements & build
+## Requirements
 
-- macOS 14.0+, Xcode 15+. No external dependencies — a single Xcode target using only system frameworks.
+- **macOS 14.0 (Sonoma) or newer.** A physical notch is not required — the app draws its own.
+- Spotify and/or Apple Music for the now-playing controls (optional).
+- Obsidian for the quick-capture feature (optional; the vault folder is chosen in Settings).
+- UI strings are currently German.
+
+## Installation (prebuilt app)
+
+1. Download `NotchMate.zip` from the [latest release](../../releases/latest) and unzip it.
+2. Move `NotchMate.app` to `/Applications`.
+3. **First launch:** the app is ad-hoc signed and not notarized, so Gatekeeper will refuse to open it. Either allow it under *System Settings → Privacy & Security → "Open Anyway"* after the first attempt, or remove the quarantine flag once in Terminal:
+
+   ```sh
+   xattr -d com.apple.quarantine /Applications/NotchMate.app
+   ```
+
+4. Grant permissions when prompted (see below). The app registers itself as a login item.
+
+### Permissions
+
+| Permission | Needed for | Prompted |
+|---|---|---|
+| Automation (Apple Events) | Controlling Spotify / Apple Music | on first playback query |
+| Accessibility | "Volume/brightness keys only in the notch" (`MediaKeyTap`) | when the feature is enabled |
+
+Everything else (file shelf, live activities, quick capture) works without extra permissions.
+
+## Build from source
+
+- Xcode 15+. No external dependencies — a single Xcode target using only system frameworks.
 
 ```sh
 xcodebuild -project NotchMate.xcodeproj -scheme NotchMate -configuration Debug build
@@ -26,13 +54,11 @@ xcodebuild -project NotchMate.xcodeproj -scheme NotchMate -configuration Debug b
 
 Or open `NotchMate.xcodeproj` and hit ⌘R.
 
-## Permissions & caveats
+## Caveats
 
-- **Automation** (Apple Events) — prompted on first launch, used to control Spotify/Music.
-- **Accessibility** — needed only for the "volume/brightness keys only in the notch" feature. Note: the grant is pinned to the code signature; ad-hoc rebuilds invalidate it.
+- The Accessibility grant is pinned to the code signature; ad-hoc rebuilds invalidate it (re-grant after reinstalling).
 - Brightness control uses the private `DisplayServices` framework, resolved dynamically — if Apple removes the symbols, the feature degrades gracefully and macOS keeps handling the brightness keys.
 - The app is not sandboxed and registers itself as a login item (`SMAppService`).
-- UI strings are currently German.
 
 ## App icon
 

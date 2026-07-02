@@ -232,17 +232,22 @@ private struct NotchTabBar: View {
     }
 }
 
-/// Quick-launch action: opens Terminal in the wiki-os vault and starts Claude
-/// Code, so tasks can be knocked out fast without leaving the notch.
+/// Quick-launch action: opens Terminal in the configured Obsidian vault and
+/// starts Claude Code, so tasks can be knocked out fast without leaving the
+/// notch. Uses the vault chosen in Settings (falls back to the home directory).
 private enum QuickLaunch {
-    /// Relative to the user's home directory.
-    static let vaultPath = "Documents/Obsidian/wiki-os"
+    static var vaultURL: URL? {
+        UserSettings.shared.vaultBookmark.flatMap(Persistence.resolveBookmark)
+    }
 
     static func openClaudeInVault() {
+        let path = vaultURL?.path ?? NSHomeDirectory()
+        // Single-quote for the shell; escape the quotes for the AppleScript string.
+        let quoted = "'" + path.replacingOccurrences(of: "'", with: "'\\''") + "'"
         let script = """
         tell application "Terminal"
             activate
-            do script "cd \(vaultPath) && claude"
+            do script "cd \(quoted.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")) && claude"
         end tell
         """
         let process = Process()
