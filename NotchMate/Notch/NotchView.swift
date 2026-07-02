@@ -163,28 +163,31 @@ private struct ExpandedView: View {
     @ObservedObject var shelf: FileShelfModel
     @ObservedObject var capture: ObsidianCapture
 
-    private var tabIndex: Int {
-        NotchViewModel.Tab.allCases.firstIndex(of: viewModel.selectedTab) ?? 0
-    }
+    /// Tab pages crossfade in place instead of sliding sideways. A sliding pager
+    /// looked right in pure SwiftUI, but on macOS animated text runs and
+    /// AppKit-backed views (the shelf's NSScrollView, the capture NSTextField)
+    /// get promoted to layers that ignore `clipped()`/`clipShape` — so sliding
+    /// content visibly crossed the island's edge. A fade never leaves the bounds.
+    private static let pageTransition: AnyTransition = .opacity
+        .combined(with: .scale(scale: 0.98))
 
     var body: some View {
         VStack(spacing: 8) {
             NotchTabBar(selection: $viewModel.selectedTab)
                 .frame(maxWidth: .infinity)
 
-            // A real pager: all tabs sit side by side and we slide the strip by the
-            // selected index. This always pages in the correct direction (a `.move`
-            // transition reads its direction at the wrong time when reversing).
-            GeometryReader { geo in
-                HStack(spacing: 0) {
+            ZStack {
+                switch viewModel.selectedTab {
+                case .music:
                     NowPlayingView(nowPlaying: nowPlaying)
-                        .frame(width: geo.size.width, height: geo.size.height)
+                        .transition(Self.pageTransition)
+                case .files:
                     ShelfView(shelf: shelf)
-                        .frame(width: geo.size.width, height: geo.size.height)
+                        .transition(Self.pageTransition)
+                case .capture:
                     CaptureView(capture: capture, viewModel: viewModel)
-                        .frame(width: geo.size.width, height: geo.size.height)
+                        .transition(Self.pageTransition)
                 }
-                .offset(x: -CGFloat(tabIndex) * geo.size.width)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .clipped()

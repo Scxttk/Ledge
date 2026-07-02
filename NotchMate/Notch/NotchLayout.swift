@@ -101,9 +101,8 @@ enum NotchLayout {
     /// Starting scale of inserted content — a subtle "grow out of the pill" morph.
     static let contentMorphScale: CGFloat = 0.96
 
-    /// Paging between tabs (tap button and horizontal swipe both use it). A plain
-    /// ease — not a spring — so the sliding content pages cleanly without the
-    /// overshoot/ghosting a bouncy spring produced.
+    /// Switching tabs (tap button and horizontal swipe both use it) — drives the
+    /// crossfade between tab pages (see `ExpandedView.pageTransition`).
     static let tabChangeAnimation: Animation = .easeInOut(duration: 0.26)
 
     /// How long CaptureView waits before mounting its AppKit-backed text field.
