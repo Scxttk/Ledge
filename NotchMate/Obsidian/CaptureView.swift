@@ -59,7 +59,7 @@ struct CaptureView: View {
                 .font(.system(size: 9))
                 .foregroundStyle(.white.opacity(0.4))
         }
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: 340)   // keep the pill compact instead of spanning the notch
         .padding(.horizontal, 30)
     }
 
