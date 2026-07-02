@@ -1,0 +1,198 @@
+{
+  "sourceLanguage" : "de",
+  "strings" : {
+    "activity.fileReceived.many" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "%lld Dateien abgelegt" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "%lld files added" } }
+      }
+    },
+    "activity.fileReceived.one" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "1 Datei abgelegt" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "1 file added" } }
+      }
+    },
+    "appearance.dark" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Dunkel" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Dark" } }
+      }
+    },
+    "appearance.light" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Hell" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Light" } }
+      }
+    },
+    "appearance.system" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Systemstandard" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "System" } }
+      }
+    },
+    "menu.launchAtLogin" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Bei Anmeldung starten" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Launch at Login" } }
+      }
+    },
+    "menu.quit" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "NotchMate beenden" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Quit NotchMate" } }
+      }
+    },
+    "menu.settings" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Einstellungen …" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Settings …" } }
+      }
+    },
+    "nowplaying.idle" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Nichts läuft" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Nothing playing" } }
+      }
+    },
+    "nowplaying.notOpen" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Kein Player geöffnet" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "No player open" } }
+      }
+    },
+    "settings.appearance" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Erscheinungsbild" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Appearance" } }
+      }
+    },
+    "settings.data" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Daten" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Data" } }
+      }
+    },
+    "settings.features" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Features" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Features" } }
+      }
+    },
+    "settings.general" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Allgemein" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "General" } }
+      }
+    },
+    "settings.hud" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "HUD-Ersatz (Lautstärke/Helligkeit)" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "HUD replacement (volume/brightness)" } }
+      }
+    },
+    "settings.launchAtLogin" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Bei Anmeldung starten" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Launch at Login" } }
+      }
+    },
+    "settings.liveActivities" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Live Activities" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Live Activities" } }
+      }
+    },
+    "settings.mediaSource" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Quelle" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Source" } }
+      }
+    },
+    "settings.mediaSource.hint" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "„Automatisch“ wählt die gerade spielende App (Spotify oder Apple Music)." } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "“Automatic” picks whichever app is currently playing (Spotify or Apple Music)." } }
+      }
+    },
+    "settings.nowPlaying" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Now Playing" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Now Playing" } }
+      }
+    },
+    "settings.resetData" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Ablage, Favoriten & Cache zurücksetzen" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Reset shelf, favorites & cache" } }
+      }
+    },
+    "settings.resetData.done" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Zurückgesetzt." } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Reset complete." } }
+      }
+    },
+    "settings.suppressOSD" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Apple-OSD unterdrücken (experimentell)" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Suppress Apple OSD (experimental)" } }
+      }
+    },
+    "shelf.dropHint" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Dateien hierher ziehen" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Drag files here" } }
+      }
+    },
+    "shelf.remove" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Entfernen" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Remove" } }
+      }
+    },
+    "shelf.share" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Teilen …" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Share …" } }
+      }
+    },
+    "shelf.missing" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Datei nicht gefunden" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "File not found" } }
+      }
+    },
+    "source.appleMusic" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Apple Music" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Apple Music" } }
+      }
+    },
+    "source.auto" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Automatisch" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Automatic" } }
+      }
+    },
+    "source.spotify" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Spotify" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Spotify" } }
+      }
+    },
+    "tab.files" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Ablage" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Files" } }
+      }
+    },
+    "tab.music" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Musik" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Music" } }
+      }
+    }
+  },
+  "version" : "1.0"
+}
