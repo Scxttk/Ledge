@@ -105,4 +105,10 @@ enum NotchLayout {
     /// ease — not a spring — so the sliding content pages cleanly without the
     /// overshoot/ghosting a bouncy spring produced.
     static let tabChangeAnimation: Animation = .easeInOut(duration: 0.26)
+
+    /// How long CaptureView waits before mounting its AppKit-backed text field.
+    /// NSTextField ignores SwiftUI clip shapes, so the real field must not exist
+    /// while the island morph (spring response 0.42) or a tab slide (0.26) is
+    /// still moving — a SwiftUI placeholder stands in until then.
+    static let captureFieldMountDelay: TimeInterval = 0.30
 }

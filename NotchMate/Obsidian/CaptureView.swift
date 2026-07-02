@@ -1,14 +1,26 @@
+import AppKit
 import SwiftUI
 
 /// The Quick Capture surface inside the expanded notch: a one-line field that
-/// appends to today's daily note, plus a button to capture the frontmost
-/// browser tab as a link. Focus is locked while typing so the island won't
-/// auto-collapse out from under the cursor.
+/// appends to today's daily note, framed by the vault name above and quick
+/// actions (open in Obsidian / Claude Code terminal) below. Focus is locked
+/// while typing so the island won't auto-collapse out from under the cursor.
+///
+/// AppKit gotcha: SwiftUI's `TextField` is backed by an `NSTextField`, and
+/// AppKit views ignore SwiftUI clip shapes — a live field would float over the
+/// island's edge during the expand morph and while paging tabs. So the real
+/// field is only mounted once this tab is front *and* the slide/morph has
+/// settled; until then a pure-SwiftUI look-alike (which clips correctly) is
+/// shown in its place.
 struct CaptureView: View {
     @ObservedObject var capture: ObsidianCapture
     @ObservedObject var viewModel: NotchViewModel
     @State private var text = ""
+    @State private var fieldLive = false
+    @State private var vaultDisplayName = ""
     @FocusState private var fieldFocused: Bool
+
+    private var isFront: Bool { viewModel.selectedTab == .capture }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -21,19 +33,67 @@ struct CaptureView: View {
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .onChange(of: viewModel.captureFocusToken) { _, _ in fieldFocused = true }
+        .onChange(of: viewModel.captureFocusToken) { _, _ in activateField() }
+        .onChange(of: viewModel.selectedTab) { _, tab in
+            if tab == .capture {
+                activateField(after: NotchLayout.captureFieldMountDelay)
+            } else {
+                // Swap the AppKit field out *before* the page slides away.
+                fieldLive = false
+            }
+        }
         .onChange(of: fieldFocused) { _, focused in viewModel.isInteractionLocked = focused }
-        .onAppear { fieldFocused = true }
-        .onDisappear { viewModel.isInteractionLocked = false }
+        .onAppear {
+            vaultDisplayName = Self.resolveVaultName()
+            if isFront { activateField(after: NotchLayout.captureFieldMountDelay) }
+        }
+        .onDisappear {
+            fieldLive = false
+            viewModel.isInteractionLocked = false
+        }
     }
 
     private var captureField: some View {
         VStack(spacing: 8) {
-            HStack(spacing: 8) {
-                Image(systemName: "square.and.pencil")
-                    .font(.system(size: 13))
-                    .foregroundStyle(.white.opacity(0.5))
+            // Above the pill: which vault this lands in.
+            HStack(spacing: 5) {
+                Image(systemName: "shippingbox")
+                    .font(.system(size: 9))
+                Text(vaultDisplayName)
+                    .font(.system(size: 10, weight: .medium))
+            }
+            .foregroundStyle(.white.opacity(0.4))
 
+            pill
+                .frame(maxWidth: 260)
+
+            // Below the pill: destination hint + shortcuts (moved here from the
+            // island's top-right corner).
+            HStack(spacing: 12) {
+                Text(String(localized: "capture.hint", defaultValue: "→ heutige Daily Note"))
+                    .font(.system(size: 9))
+                    .foregroundStyle(.white.opacity(0.4))
+                Circle()
+                    .fill(Color.white.opacity(0.25))
+                    .frame(width: 2.5, height: 2.5)
+                CaptureIconButton(systemName: "diamond", help: String(localized: "capture.open", defaultValue: "In Obsidian öffnen")) {
+                    openVaultInObsidian()
+                }
+                QuickLaunchButton()
+            }
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    /// The capsule around the input. While `fieldLive` is false a SwiftUI-only
+    /// placeholder stands in for the AppKit-backed `TextField` (see header doc).
+    private var pill: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "square.and.pencil")
+                .font(.system(size: 13))
+                .foregroundStyle(.white.opacity(0.5))
+
+            if fieldLive {
                 TextField(
                     String(localized: "capture.placeholder", defaultValue: "Schnelle Notiz …"),
                     text: $text
@@ -43,24 +103,24 @@ struct CaptureView: View {
                 .foregroundStyle(.white)
                 .focused($fieldFocused)
                 .onSubmit(submit)
-
-                CaptureIconButton(systemName: "safari", help: String(localized: "capture.browser", defaultValue: "Aktuelle Browser-Seite erfassen")) {
-                    capture.captureBrowserPage()
-                }
-                CaptureIconButton(systemName: "arrow.up.circle.fill", help: String(localized: "capture.submit", defaultValue: "An Daily Note anhängen"), prominent: true, action: submit)
-                    .disabled(text.trimmingCharacters(in: .whitespaces).isEmpty)
+            } else {
+                Text(text.isEmpty ? String(localized: "capture.placeholder", defaultValue: "Schnelle Notiz …") : text)
+                    .font(.system(size: 13))
+                    .foregroundStyle(.white.opacity(text.isEmpty ? 0.35 : 1))
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 9)
-            .background(Capsule().fill(Color.white.opacity(0.10)))
-            .overlay(Capsule().strokeBorder(Color.white.opacity(fieldFocused ? 0.35 : 0.12), lineWidth: 1))
 
-            Text(String(localized: "capture.hint", defaultValue: "→ heutige Daily Note"))
-                .font(.system(size: 9))
-                .foregroundStyle(.white.opacity(0.4))
+            CaptureIconButton(systemName: "safari", help: String(localized: "capture.browser", defaultValue: "Aktuelle Browser-Seite erfassen")) {
+                capture.captureBrowserPage()
+            }
+            CaptureIconButton(systemName: "arrow.up.circle.fill", help: String(localized: "capture.submit", defaultValue: "An Daily Note anhängen"), prominent: true, action: submit)
+                .disabled(text.trimmingCharacters(in: .whitespaces).isEmpty)
         }
-        .frame(maxWidth: 340)   // keep the pill compact instead of spanning the notch
-        .padding(.horizontal, 30)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+        .background(Capsule().fill(Color.white.opacity(0.10)))
+        .overlay(Capsule().strokeBorder(Color.white.opacity(fieldFocused ? 0.35 : 0.12), lineWidth: 1))
     }
 
     private var notConfigured: some View {
@@ -80,6 +140,36 @@ struct CaptureView: View {
             text = ""
             fieldFocused = true   // stay ready for the next thought
         }
+    }
+
+    /// Mount the real text field (optionally once animations settled) and focus it.
+    private func activateField(after delay: TimeInterval = 0) {
+        let mount = {
+            guard isFront else { return }
+            fieldLive = true
+            fieldFocused = true
+        }
+        if delay > 0 {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { mount() }
+        } else {
+            mount()
+        }
+    }
+
+    private func openVaultInObsidian() {
+        let vault = vaultDisplayName
+        guard !vault.isEmpty,
+              let url = URL(string: "obsidian://open?vault=\(CaptureEscaping.urlEncoded(vault))") else { return }
+        NSWorkspace.shared.open(url)
+    }
+
+    private static func resolveVaultName() -> String {
+        let settings = UserSettings.shared
+        if !settings.vaultName.isEmpty { return settings.vaultName }
+        if let bookmark = settings.vaultBookmark, let root = Persistence.resolveBookmark(bookmark) {
+            return root.lastPathComponent
+        }
+        return ""
     }
 }
 
@@ -103,5 +193,66 @@ private struct CaptureIconButton: View {
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
         .help(help)
+    }
+}
+
+/// Opens Terminal in the configured Obsidian vault and starts Claude Code, so
+/// tasks can be knocked out fast without leaving the notch. Falls back to the
+/// home directory when no vault is set.
+enum QuickLaunch {
+    static var vaultURL: URL? {
+        UserSettings.shared.vaultBookmark.flatMap(Persistence.resolveBookmark)
+    }
+
+    static func openClaudeInVault() {
+        let path = vaultURL?.path ?? NSHomeDirectory()
+        // Single-quote for the shell; escape the quotes for the AppleScript string.
+        let quoted = "'" + path.replacingOccurrences(of: "'", with: "'\\''") + "'"
+        let script = """
+        tell application "Terminal"
+            activate
+            do script "cd \(quoted.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")) && claude"
+        end tell
+        """
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        process.arguments = ["-e", script]
+        try? process.run()
+    }
+
+    /// The real Obsidian app icon if installed, otherwise nil (caller falls back to an SF Symbol).
+    static var obsidianIcon: NSImage? {
+        let candidates = [
+            "/Applications/Obsidian.app",
+            "\(NSHomeDirectory())/Applications/Obsidian.app",
+        ]
+        for path in candidates where FileManager.default.fileExists(atPath: path) {
+            return NSWorkspace.shared.icon(forFile: path)
+        }
+        return nil
+    }
+}
+
+struct QuickLaunchButton: View {
+    var body: some View {
+        Button {
+            Haptics.perform(.alignment)
+            QuickLaunch.openClaudeInVault()
+        } label: {
+            Group {
+                if let icon = QuickLaunch.obsidianIcon {
+                    Image(nsImage: icon).resizable().scaledToFit()
+                } else {
+                    Image(systemName: "terminal")
+                        .resizable().scaledToFit()
+                        .padding(3)
+                        .foregroundStyle(.white.opacity(0.85))
+                }
+            }
+            .frame(width: 22, height: 22)
+            .clipShape(RoundedRectangle(cornerRadius: 5))
+        }
+        .buttonStyle(.plain)
+        .help(String(localized: "capture.claude", defaultValue: "Claude Code im Vault öffnen"))
     }
 }

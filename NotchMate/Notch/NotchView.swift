@@ -171,9 +171,6 @@ private struct ExpandedView: View {
         VStack(spacing: 8) {
             NotchTabBar(selection: $viewModel.selectedTab)
                 .frame(maxWidth: .infinity)
-                .overlay(alignment: .trailing) {
-                    QuickLaunchButton()
-                }
 
             // A real pager: all tabs sit side by side and we slide the strip by the
             // selected index. This always pages in the correct direction (a `.move`
@@ -229,67 +226,6 @@ private struct NotchTabBar: View {
             .foregroundStyle(.white.opacity(selection == value ? 1 : 0.55))
         }
         .buttonStyle(.plain)
-    }
-}
-
-/// Quick-launch action: opens Terminal in the configured Obsidian vault and
-/// starts Claude Code, so tasks can be knocked out fast without leaving the
-/// notch. Uses the vault chosen in Settings (falls back to the home directory).
-private enum QuickLaunch {
-    static var vaultURL: URL? {
-        UserSettings.shared.vaultBookmark.flatMap(Persistence.resolveBookmark)
-    }
-
-    static func openClaudeInVault() {
-        let path = vaultURL?.path ?? NSHomeDirectory()
-        // Single-quote for the shell; escape the quotes for the AppleScript string.
-        let quoted = "'" + path.replacingOccurrences(of: "'", with: "'\\''") + "'"
-        let script = """
-        tell application "Terminal"
-            activate
-            do script "cd \(quoted.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")) && claude"
-        end tell
-        """
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-        process.arguments = ["-e", script]
-        try? process.run()
-    }
-
-    /// The real Obsidian app icon if installed, otherwise nil (caller falls back to an SF Symbol).
-    static var obsidianIcon: NSImage? {
-        let candidates = [
-            "/Applications/Obsidian.app",
-            "\(NSHomeDirectory())/Applications/Obsidian.app",
-        ]
-        for path in candidates where FileManager.default.fileExists(atPath: path) {
-            return NSWorkspace.shared.icon(forFile: path)
-        }
-        return nil
-    }
-}
-
-private struct QuickLaunchButton: View {
-    var body: some View {
-        Button {
-            Haptics.perform(.alignment)
-            QuickLaunch.openClaudeInVault()
-        } label: {
-            Group {
-                if let icon = QuickLaunch.obsidianIcon {
-                    Image(nsImage: icon).resizable().scaledToFit()
-                } else {
-                    Image(systemName: "terminal")
-                        .resizable().scaledToFit()
-                        .padding(3)
-                        .foregroundStyle(.white.opacity(0.85))
-                }
-            }
-            .frame(width: 22, height: 22)
-            .clipShape(RoundedRectangle(cornerRadius: 5))
-        }
-        .buttonStyle(.plain)
-        .help("Claude Code im Wiki-OS-Vault öffnen")
     }
 }
 
