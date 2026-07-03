@@ -38,8 +38,14 @@ struct CaptureView: View {
             if tab == .capture {
                 activateField(after: NotchLayout.captureFieldMountDelay)
             } else {
-                // Swap the AppKit field out *before* the page slides away.
+                // Swap the AppKit field out *before* the page slides away, and
+                // release focus explicitly — SwiftUI doesn't reliably clear
+                // `@FocusState` just because the focused view left the hierarchy,
+                // which otherwise left `isInteractionLocked` stuck `true` forever
+                // and silently disabled auto-collapse.
                 fieldLive = false
+                fieldFocused = false
+                viewModel.isInteractionLocked = false
             }
         }
         .onChange(of: fieldFocused) { _, focused in viewModel.isInteractionLocked = focused }

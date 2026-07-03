@@ -10,13 +10,36 @@ final class NotchWindowController {
     private let container: NotchContainerView
 
     private var collapseWorkItem: DispatchWorkItem?
+    /// Pending "advance to the next stage" step of the staged expand/collapse
+    /// walk, so a direction change mid-walk can cancel it and reverse.
+    private var stageWorkItem: DispatchWorkItem?
+    /// Where the staged walk is currently heading (`.expanded` or `.collapsed`),
+    /// or nil when the island is at rest. Guards against hover events restarting
+    /// a walk that's already going the right way.
+    private var stagingTarget: NotchViewModel.IslandState?
     private var scrollMonitor: Any?
     private var scrollMonitorGlobal: Any?
     private var hoverMonitorGlobal: Any?
     private var hoverMonitorLocal: Any?
 
-    /// Logs the live hover evaluation to the Console when set (debugging only).
+    /// Logs the live hover evaluation to a plain file when set (debugging only).
+    /// A file is used instead of NSLog because modern macOS redacts dynamic
+    /// `%@` substitutions in the unified log by default.
     private let debugHoverLogging = false
+
+    private func debugLog(_ message: String) {
+        let line = "\(Date()) \(message)\n"
+        let url = URL(fileURLWithPath: NSHomeDirectory() + "/notchmate_hover_debug.log")
+        if let data = line.data(using: .utf8) {
+            if let handle = try? FileHandle(forWritingTo: url) {
+                handle.seekToEndOfFile()
+                handle.write(data)
+                try? handle.close()
+            } else {
+                try? data.write(to: url)
+            }
+        }
+    }
 
     /// When the user closes the notch with a swipe-up, suppress hover-expand
     /// until the cursor has left the island once.
@@ -64,9 +87,10 @@ final class NotchWindowController {
                 width = viewModel.collapsedWidth(isPlaying: self.nowPlaying.isPlaying, hasItems: !self.shelf.items.isEmpty) + NotchLayout.hitTestWidthPadding
                 height = viewModel.collapsedHeight + NotchLayout.hitTestHeightPadding
             }
+            // The island floats `islandTopGap` below the container's top edge.
             return NSRect(
                 x: (bounds.width - width) / 2,
-                y: bounds.height - height,
+                y: bounds.height - NotchLayout.islandTopGap - height,
                 width: width,
                 height: height
             )
@@ -130,6 +154,17 @@ final class NotchWindowController {
             self.hoverMonitorLocal = nil
         }
         collapseWorkItem?.cancel()
+        // Don't strand the island mid-walk over a sleep: finish the remaining
+        // stages immediately (no animation — the screen is going dark anyway).
+        stageWorkItem?.cancel()
+        stageWorkItem = nil
+        stagingTarget = nil
+        switch viewModel.islandState {
+        case .band, .solo, .condensing:
+            viewModel.islandState = .collapsed
+        case .expanded, .collapsed:
+            break
+        }
     }
 
     /// Re-install the monitors on wake and snap the panel back to the correct
@@ -150,7 +185,9 @@ final class NotchWindowController {
         suppressHover = false
         collapseWorkItem?.cancel()
         viewModel.selectedTab = .capture
-        setExpanded(true)
+        // Open directly (not through the staged reveal) so the field is ready
+        // to type into immediately.
+        setExpanded(true, staged: false)
         panel.makeKeyAndOrderFront(nil)
         viewModel.requestCaptureFocus()
     }
@@ -201,7 +238,7 @@ final class NotchWindowController {
 
     /// The visible island rect in global screen coordinates (origin bottom-left),
     /// matching what the SwiftUI island actually draws: centered horizontally,
-    /// flush with the top screen edge.
+    /// floating `islandTopGap` below the top screen edge.
     private func islandScreenRect(expanded: Bool) -> NSRect? {
         guard let screen = ScreenManager.targetScreen() else { return nil }
         let width: CGFloat
@@ -213,16 +250,19 @@ final class NotchWindowController {
             width = viewModel.collapsedWidth(isPlaying: nowPlaying.isPlaying, hasItems: !shelf.items.isEmpty) + NotchLayout.collapsedHoverInset * 2
             height = viewModel.collapsedHeight + NotchLayout.collapsedHoverInset
         }
-        // Bleed the rect above the physical top edge: the cursor's y at the very
-        // top equals screen.frame.maxY, and NSRect.contains treats the top edge as
-        // exclusive (y < maxY) — without this margin the notch would refuse to
-        // open at the screen edge and collapse the instant the cursor reaches it.
+        // The island floats `islandTopGap` below the edge, but the hover zone
+        // still spans all the way to (and past) the top: pushing the cursor
+        // against the screen edge above the island must keep opening it. The
+        // extra bleed exists because the cursor's y at the very top equals
+        // screen.frame.maxY, and NSRect.contains treats the top edge as
+        // exclusive (y < maxY) — without it the notch would refuse to open at
+        // the screen edge and collapse the instant the cursor reaches it.
         let topBleed = NotchLayout.hoverTopBleed
         return NSRect(
             x: screen.frame.midX - width / 2,
-            y: screen.frame.maxY - height,
+            y: screen.frame.maxY - NotchLayout.islandTopGap - height,
             width: width,
-            height: height + topBleed
+            height: height + NotchLayout.islandTopGap + topBleed
         )
     }
 
@@ -238,25 +278,38 @@ final class NotchWindowController {
             guard let rect = islandScreenRect(expanded: true) else { return }
             let inside = rect.contains(cursor)
             if debugHoverLogging {
-                NSLog("[NotchMate] hover expanded rect=%@ cursor=%@ inside=%d",
-                      NSStringFromRect(rect), NSStringFromPoint(cursor), inside ? 1 : 0)
+                debugLog("hover expanded rect=\(NSStringFromRect(rect)) cursor=\(NSStringFromPoint(cursor)) inside=\(inside) dropTargeted=\(shelf.isDropTargeted) interactionLocked=\(viewModel.isInteractionLocked)")
             }
             if inside {
                 collapseWorkItem?.cancel()
             } else if !shelf.isDropTargeted && !viewModel.isInteractionLocked {
                 // Cursor left the expanded footprint: collapse immediately. The
                 // hover monitor is deterministic, so no debounce delay is needed.
-                // A locked interaction (e.g. the capture field is focused) keeps
-                // the island open so typing isn't dismissed.
                 collapseWorkItem?.cancel()
                 setExpanded(false)
+            } else if !shelf.isDropTargeted && viewModel.isInteractionLocked {
+                // The capture field is focused (e.g. right after submitting a
+                // note, which re-focuses it for the next thought) and normally
+                // that keeps the island open so typing isn't dismissed. But
+                // nothing ever un-focuses it on its own, so without this the
+                // island stayed open forever once you'd used Capture — the
+                // cursor being gone is itself a signal you're done. Grant a
+                // short grace period instead of blocking collapse indefinitely.
+                if collapseWorkItem == nil {
+                    let work = DispatchWorkItem { [weak self] in
+                        guard let self else { return }
+                        self.viewModel.isInteractionLocked = false
+                        self.setExpanded(false)
+                    }
+                    collapseWorkItem = work
+                    DispatchQueue.main.asyncAfter(deadline: .now() + NotchLayout.interactionLockGraceDelay, execute: work)
+                }
             }
         } else {
             guard let rect = islandScreenRect(expanded: false) else { return }
             let inside = rect.contains(cursor)
             if debugHoverLogging {
-                NSLog("[NotchMate] hover collapsed rect=%@ cursor=%@ inside=%d suppress=%d",
-                      NSStringFromRect(rect), NSStringFromPoint(cursor), inside ? 1 : 0, suppressHover ? 1 : 0)
+                debugLog("hover collapsed rect=\(NSStringFromRect(rect)) cursor=\(NSStringFromPoint(cursor)) inside=\(inside) suppress=\(suppressHover)")
             }
             if inside {
                 guard !suppressHover else { return }
@@ -394,11 +447,90 @@ final class NotchWindowController {
 
     // MARK: - State
 
-    private func setExpanded(_ expanded: Bool) {
-        guard viewModel.isExpanded != expanded else { return }
-        withAnimation(NotchLayout.islandMorphAnimation) {
-            viewModel.isExpanded = expanded
+    /// The expand/collapse stage sequence, most-collapsed first. Both
+    /// directions walk this list one step at a time (`advanceStaging`), so the
+    /// collapse — panel → tab band → solo tab → lone icon → pill — plays in
+    /// exact reverse when opening.
+    private static let stageOrder: [NotchViewModel.IslandState] =
+        [.collapsed, .condensing, .solo, .band, .expanded]
+
+    /// Walk the island one stage at a time toward the given end state. Called
+    /// repeatedly by hover/gesture; re-targeting mid-walk just reverses from
+    /// wherever we are. `staged: false` jumps straight there (the capture
+    /// hotkey wants the field open now, not after the staged reveal).
+    private func setExpanded(_ expanded: Bool, staged: Bool = true) {
+        let target: NotchViewModel.IslandState = expanded ? .expanded : .collapsed
+
+        guard viewModel.islandState != target else {
+            // Already there — make sure no stale walk keeps running.
+            stageWorkItem?.cancel(); stageWorkItem = nil
+            stagingTarget = nil
+            return
         }
+        guard staged else {
+            stageWorkItem?.cancel(); stageWorkItem = nil
+            stagingTarget = nil
+            withAnimation(NotchLayout.islandExpandAnimation) { viewModel.islandState = target }
+            Haptics.perform(.levelChange)
+            return
+        }
+        guard stagingTarget != target else { return }  // already walking there
+        stageWorkItem?.cancel(); stageWorkItem = nil
+        stagingTarget = target
         Haptics.perform(.levelChange)
+        advanceStaging()
+    }
+
+    /// Move the island one stage toward `stagingTarget`, then schedule the next
+    /// step after that stage's rest delay. The final step lands on the target
+    /// and ends the walk.
+    private func advanceStaging() {
+        guard let target = stagingTarget,
+              let current = Self.stageOrder.firstIndex(of: viewModel.islandState),
+              let goal = Self.stageOrder.firstIndex(of: target)
+        else { return }
+        guard current != goal else {
+            stagingTarget = nil; stageWorkItem = nil
+            return
+        }
+
+        let expanding = goal > current
+        let next = Self.stageOrder[current + (expanding ? 1 : -1)]
+
+        if next == .collapsed {
+            // Handover to the pill: no withAnimation — the condensed icon and
+            // the pill are visually identical; the content transition fades on
+            // its own explicit clock (no crossfade dip).
+            viewModel.islandState = .collapsed
+        } else {
+            withAnimation(expanding ? NotchLayout.islandExpandAnimation : NotchLayout.islandCollapseAnimation) {
+                viewModel.islandState = next
+            }
+        }
+
+        guard next != target else {
+            stagingTarget = nil; stageWorkItem = nil
+            return
+        }
+        let work = DispatchWorkItem { [weak self] in self?.advanceStaging() }
+        stageWorkItem = work
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + stageRestDelay(entering: next, expanding: expanding),
+            execute: work
+        )
+    }
+
+    /// How long to rest in an intermediate stage before advancing. Expand rests
+    /// are shorter than collapse rests so opening stays responsive on hover.
+    private func stageRestDelay(entering state: NotchViewModel.IslandState, expanding: Bool) -> TimeInterval {
+        switch (state, expanding) {
+        case (.band, false):       return NotchLayout.bandCollapseDelay
+        case (.solo, false):       return NotchLayout.soloCollapseDelay
+        case (.condensing, false): return NotchLayout.condenseSwapDelay
+        case (.condensing, true):  return NotchLayout.condenseExpandDelay
+        case (.solo, true):        return NotchLayout.soloExpandDelay
+        case (.band, true):        return NotchLayout.bandExpandDelay
+        default:                   return 0
+        }
     }
 }
