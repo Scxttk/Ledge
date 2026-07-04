@@ -91,6 +91,13 @@ enum NotchLayout {
     /// what kills the crossfade brightness dip — the "flicker".
     static let pillHandoverFade: TimeInterval = 0.18
 
+    /// When music plays, the collapse hands the tab bar off to the now-playing
+    /// pill hero (cover + spectrum) at the `.solo` stage. Those two are *different*
+    /// content, so unlike `pillHandoverFade` this is a genuine symmetric crossfade
+    /// (both fade over the same clock) — a hold-opaque handover would show them
+    /// overlapping. Slightly longer for a smooth dissolve as the capsule narrows.
+    static let heroCrossfadeDuration: TimeInterval = 0.24
+
     /// Width of the collapsed pill while a live activity is showing.
     static let activityWidth: CGFloat = 220
     /// Wider pill for the audio-route activity (bigger icon + device name + battery)
@@ -102,7 +109,7 @@ enum NotchLayout {
     /// Gap between the physical top screen edge and the island — like the
     /// iPhone's Dynamic Island floating in the status bar. Identical in both
     /// states so the top edge stays put while the island morphs.
-    static let islandTopGap: CGFloat = 6
+    static let islandTopGap: CGFloat = 2
     /// Collapsed corner radius = half the pill height, i.e. a true capsule.
     static var collapsedCornerRadius: CGFloat { collapsedHeight / 2 }
     /// Expanded corner radius — the iPhone's expanded Live Activity uses ~40pt;

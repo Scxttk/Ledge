@@ -24,6 +24,10 @@ protocol NowPlayingSource: AnyObject {
     func nextTrack()
     func previousTrack()
     func toggleShuffle()
+    /// Jump to `seconds` within the current track (scrubbing).
+    func seek(to seconds: TimeInterval)
+    /// Bring the player app to the front (Apple Music has no track deep link).
+    func activate()
 }
 
 /// Shared AppleScript plumbing for scriptable players. Subclasses provide the
@@ -51,6 +55,11 @@ class ScriptableMediaSource: NowPlayingSource {
     func playPause() { run("tell application \"\(appName)\" to playpause") }
     func nextTrack() { run("tell application \"\(appName)\" to next track") }
     func previousTrack() { run("tell application \"\(appName)\" to previous track") }
+    /// Both Spotify and Music take `set player position to <seconds>`.
+    func seek(to seconds: TimeInterval) {
+        run("tell application \"\(appName)\" to set player position to \(Int(seconds.rounded()))")
+    }
+    func activate() { run("tell application \"\(appName)\" to activate") }
 
     /// Overridden per dialect (`set shuffling` vs `set shuffle enabled`).
     func shuffleCommand(_ on: Bool) -> String { "" }
@@ -87,8 +96,10 @@ class ScriptableMediaSource: NowPlayingSource {
             return NowPlayingState(isRunning: output == "STOPPED")
         }
         let parts = output.components(separatedBy: "|||")
-        guard parts.count == 8 else { return NowPlayingState() }
+        // 8 legacy fields, or 9 with a trailing track deep-link URL.
+        guard parts.count >= 8 else { return NowPlayingState() }
         let artwork = parts[3].isEmpty ? nil : URL(string: parts[3])
+        let trackURL = parts.count >= 9 && !parts[8].isEmpty ? URL(string: parts[8]) : nil
         return NowPlayingState(
             isRunning: true,
             isPlaying: parts[6] == "playing",
@@ -97,7 +108,8 @@ class ScriptableMediaSource: NowPlayingSource {
                 artist: parts[1],
                 album: parts[2],
                 artworkURL: artwork,
-                duration: Self.parseNumber(parts[4]) / durationDivisor
+                duration: Self.parseNumber(parts[4]) / durationDivisor,
+                url: trackURL
             ),
             position: Self.parseNumber(parts[5]),
             isShuffling: parts[7] == "true"
@@ -158,7 +170,8 @@ final class SpotifySource: ScriptableMediaSource {
                 set trackArt to artwork url of current track
                 set trackDuration to duration of current track
                 set trackPosition to (player position) as integer
-                return trackName & "|||" & trackArtist & "|||" & trackAlbum & "|||" & trackArt & "|||" & trackDuration & "|||" & trackPosition & "|||" & ps & "|||" & sh
+                set trackUrl to spotify url of current track
+                return trackName & "|||" & trackArtist & "|||" & trackAlbum & "|||" & trackArt & "|||" & trackDuration & "|||" & trackPosition & "|||" & ps & "|||" & sh & "|||" & trackUrl
             end tell
         else
             return "NOT_RUNNING"

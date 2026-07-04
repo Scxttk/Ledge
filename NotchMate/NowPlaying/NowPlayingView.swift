@@ -2,6 +2,17 @@ import SwiftUI
 
 struct NowPlayingView: View {
     @ObservedObject var nowPlaying: NowPlayingManager
+    /// Shared spectrum tap, owned by AppDelegate and driven centrally in
+    /// `NotchRootView` (so the collapsed pill's wave is live too). The music tab
+    /// just observes it.
+    @ObservedObject var spectrum: SpectrumAnalyzer
+    /// Local to the music tab: only needs to enumerate output devices while the
+    /// tab is on screen, so it starts/stops with the view.
+    @StateObject private var output = AudioOutputController()
+
+    /// Scrub fraction while the progress bar is being dragged (nil = not dragging),
+    /// so the bar follows the finger before the seek lands.
+    @State private var scrubFraction: Double?
 
     var body: some View {
         // Empty containers (Spacers + a narrower content column) pad the edges,
@@ -18,6 +29,8 @@ struct NowPlayingView: View {
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onAppear { output.start() }
+        .onDisappear { output.stop() }
     }
 
     // MARK: Row 1 — cover · title/artist · wave
@@ -48,30 +61,42 @@ struct NowPlayingView: View {
 
             Spacer(minLength: 4)
 
-            WaveBarsView(isActive: nowPlaying.isPlaying && nowPlaying.screensAwake)
-                .frame(width: 28, height: 30)
+            WaveBarsView(
+                isActive: nowPlaying.isPlaying && nowPlaying.screensAwake,
+                tint: nowPlaying.artworkColor,
+                bands: spectrum.isLive ? spectrum.bands : nil,
+                count: 5
+            )
+            .frame(width: 34, height: 30)
         }
     }
 
+    /// Tapping the cover opens the song in its app (deep link, or brings the app
+    /// forward). Only interactive when there's actually a track.
     private var artwork: some View {
-        Group {
-            if let url = nowPlaying.track?.artworkURL {
-                AsyncImage(url: url) { image in
-                    image.resizable().scaledToFill()
-                } placeholder: {
+        Button(action: { nowPlaying.openCurrentTrack() }) {
+            Group {
+                if let url = nowPlaying.track?.artworkURL {
+                    AsyncImage(url: url) { image in
+                        image.resizable().scaledToFill()
+                    } placeholder: {
+                        placeholderArtwork
+                    }
+                } else {
                     placeholderArtwork
                 }
-            } else {
-                placeholderArtwork
             }
+            .frame(width: 56, height: 56)
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .strokeBorder(Color.white.opacity(0.18), lineWidth: 1)
+            )
+            .shadow(color: .black.opacity(0.4), radius: 6, y: 3)
         }
-        .frame(width: 56, height: 56)
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .strokeBorder(Color.white.opacity(0.18), lineWidth: 1)
-        )
-        .shadow(color: .black.opacity(0.4), radius: 6, y: 3)
+        .buttonStyle(.plain)
+        .disabled(nowPlaying.track == nil)
+        .pointingHandCursor(enabled: nowPlaying.track != nil)
     }
 
     private var placeholderArtwork: some View {
@@ -90,18 +115,42 @@ struct NowPlayingView: View {
         return min(max(nowPlaying.position / duration, 0), 1)
     }
 
+    /// What the bar shows: the drag position while scrubbing, else live playback.
+    private var displayedFraction: Double { scrubFraction ?? fraction }
+
     private var progressRow: some View {
         HStack(spacing: 8) {
-            timeLabel(nowPlaying.position)
+            timeLabel(displayedFraction * (nowPlaying.track?.duration ?? 0))
             GeometryReader { geo in
+                let isScrubbing = scrubFraction != nil
+                // Minimal: a dim track and a bright filled bar; the play head is
+                // simply the end of the filled bar (no knob). The bar thickens a
+                // touch while scrubbing for feedback.
                 ZStack(alignment: .leading) {
                     Capsule().fill(Color.white.opacity(0.18))
                     Capsule()
-                        .fill(Color.white.opacity(0.9))
-                        .frame(width: geo.size.width * fraction)
+                        .fill(Color.white.opacity(isScrubbing ? 1 : 0.9))
+                        .frame(width: max(0, geo.size.width * displayedFraction))
                 }
+                .frame(height: isScrubbing ? 5 : 3)
+                .frame(maxHeight: .infinity)   // enlarge the vertical hit area
+                .contentShape(Rectangle())
+                .gesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { value in
+                            guard nowPlaying.track?.duration ?? 0 > 0 else { return }
+                            scrubFraction = min(max(value.location.x / geo.size.width, 0), 1)
+                        }
+                        .onEnded { _ in
+                            if let f = scrubFraction, let d = nowPlaying.track?.duration {
+                                nowPlaying.seek(to: f * d)
+                            }
+                            scrubFraction = nil
+                        }
+                )
+                .animation(.easeOut(duration: 0.12), value: isScrubbing)
             }
-            .frame(height: 4)
+            .frame(height: 14)
             timeLabel(nowPlaying.track?.duration ?? 0)
         }
     }
@@ -119,16 +168,10 @@ struct NowPlayingView: View {
         return String(format: "%d:%02d", total / 60, total % 60)
     }
 
-    // MARK: Row 3 — shuffle · prev · play/pause · next · favorite
+    // MARK: Row 3 — prev · play/pause · next · output picker
 
     private var controlsRow: some View {
         HStack(spacing: 16) {
-            ControlButton(
-                systemName: "shuffle",
-                size: 13,
-                color: nowPlaying.isShuffling ? .red : .white.opacity(0.8),
-                action: nowPlaying.toggleShuffle
-            )
             ControlButton(systemName: "backward.fill", size: 15, action: nowPlaying.previousTrack)
             ControlButton(
                 systemName: nowPlaying.isPlaying ? "pause.fill" : "play.fill",
@@ -136,14 +179,51 @@ struct NowPlayingView: View {
                 action: nowPlaying.playPause
             )
             ControlButton(systemName: "forward.fill", size: 15, action: nowPlaying.nextTrack)
-            ControlButton(
-                systemName: nowPlaying.isFavorite ? "star.fill" : "star",
-                size: 13,
-                color: nowPlaying.isFavorite ? .green : .white.opacity(0.8),
-                action: nowPlaying.toggleFavorite
-            )
+            outputPicker
         }
         .frame(maxWidth: .infinity, alignment: .center)
+    }
+
+    /// Audio-output selector (replaces the old shuffle + favourite buttons):
+    /// pick which device the sound plays through, current one checked.
+    private var outputPicker: some View {
+        Menu {
+            ForEach(output.devices) { device in
+                Button { output.select(device) } label: {
+                    if device.id == output.currentDeviceID {
+                        Label(device.name, systemImage: "checkmark")
+                    } else {
+                        Text(device.name)
+                    }
+                }
+            }
+        } label: {
+            Image(systemName: "airplayaudio")
+                .font(.system(size: 14))
+                .foregroundStyle(.white.opacity(0.8))
+                .frame(width: 34, height: 32)
+                .contentShape(Rectangle())
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .pointingHandCursor(enabled: true)
+    }
+}
+
+/// A pointing-hand cursor while hovering, for clickable non-button surfaces.
+private struct PointingHandCursor: ViewModifier {
+    let enabled: Bool
+    func body(content: Content) -> some View {
+        content.onHover { inside in
+            if enabled, inside { NSCursor.pointingHand.push() } else { NSCursor.pop() }
+        }
+    }
+}
+
+extension View {
+    func pointingHandCursor(enabled: Bool) -> some View {
+        modifier(PointingHandCursor(enabled: enabled))
     }
 }
 
@@ -173,36 +253,75 @@ private struct ControlButton: View {
     }
 }
 
-/// Animated blue frequency bars shown while music plays.
+/// Frequency bars for the now-playing wave. When `bands` carries real spectrum
+/// data (from `SpectrumAnalyzer`) the bars reflect the song's actual frequencies;
+/// otherwise they fall back to a procedural animation. Tinted to the cover's
+/// accent colour when one is available, else the default blue.
 struct WaveBarsView: View {
     var isActive: Bool
+    var tint: Color?
+    /// Live per-band magnitudes (0…1). nil/empty → procedural fallback.
+    var bands: [CGFloat]? = nil
     var count: Int = 4
     var maxHeight: CGFloat = 26
     var barWidth: CGFloat = 3
     var spacing: CGFloat = 3
 
-    var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !isActive)) { timeline in
-            let time = timeline.date.timeIntervalSinceReferenceDate
-            HStack(alignment: .center, spacing: spacing) {
-                ForEach(0..<count, id: \.self) { index in
-                    Capsule()
-                        .fill(
-                            LinearGradient(
-                                colors: [Color.cyan, Color.blue],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-                        )
-                        .frame(width: barWidth, height: barHeight(index: index, time: time))
-                }
-            }
-            .frame(maxHeight: .infinity, alignment: .center)
+    private var gradientColors: [Color] {
+        if let tint { return [tint, tint.opacity(0.55)] }
+        return [.cyan, .blue]
+    }
+
+    private func bar(_ height: CGFloat) -> some View {
+        Capsule()
+            .fill(LinearGradient(colors: gradientColors, startPoint: .top, endPoint: .bottom))
+            .frame(width: barWidth, height: height)
+    }
+
+    private var floorHeight: CGFloat { max(3, maxHeight * 0.14) }
+
+    /// Fit the source bands to `count` bars: pass through when they match, else
+    /// group into `count` buckets (max per bucket keeps the punch) so the tiny
+    /// collapsed pill can show 3 bars from the 5-band spectrum.
+    private func fitted(_ source: [CGFloat]) -> [CGFloat] {
+        guard count > 0, !source.isEmpty else { return source }
+        if source.count == count { return source }
+        return (0..<count).map { i in
+            let lo = i * source.count / count
+            let hi = max(lo + 1, (i + 1) * source.count / count)
+            return source[lo..<min(hi, source.count)].max() ?? 0
         }
     }
 
-    private func barHeight(index: Int, time: Double) -> CGFloat {
-        guard isActive else { return max(3, maxHeight * 0.18) }
+    var body: some View {
+        if let bands, !bands.isEmpty {
+            // Real spectrum: bar height follows each band; the analyzer already
+            // smooths, a short animation just eases between UI updates.
+            let values = fitted(bands)
+            HStack(alignment: .center, spacing: spacing) {
+                ForEach(values.indices, id: \.self) { i in
+                    bar(max(floorHeight, maxHeight * values[i]))
+                }
+            }
+            .frame(maxHeight: .infinity, alignment: .center)
+            .animation(.easeOut(duration: 0.09), value: values)
+            .animation(.easeInOut(duration: 0.4), value: tint)
+        } else {
+            TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !isActive)) { timeline in
+                let time = timeline.date.timeIntervalSinceReferenceDate
+                HStack(alignment: .center, spacing: spacing) {
+                    ForEach(0..<count, id: \.self) { index in
+                        bar(proceduralHeight(index: index, time: time))
+                    }
+                }
+                .frame(maxHeight: .infinity, alignment: .center)
+                .animation(.easeInOut(duration: 0.4), value: tint)
+            }
+        }
+    }
+
+    private func proceduralHeight(index: Int, time: Double) -> CGFloat {
+        guard isActive else { return floorHeight }
         let phase = Double(index) * 0.7
         let value = 0.35 + 0.65 * abs(sin(time * 4 + phase))
         return maxHeight * CGFloat(value)

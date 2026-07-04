@@ -11,6 +11,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let shelf = FileShelfModel()
     let activities = ActivityManager()
     let systemHUD = SystemHUD()
+    /// Shared audio-spectrum tap. Long-lived (not owned by the music tab) so the
+    /// collapsed pill's wave can show the real spectrum too; its lifecycle is
+    /// driven centrally in `NotchRootView` off playback + screen state.
+    let spectrum = SpectrumAnalyzer(bandCount: 5)
     lazy var capture = ObsidianCapture(activities: activities)
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -18,7 +22,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.accessory)
         applyAppearance(UserSettings.shared.appearance)
 
-        let controller = NotchWindowController(viewModel: viewModel, nowPlaying: nowPlaying, shelf: shelf, activities: activities, capture: capture)
+        let controller = NotchWindowController(viewModel: viewModel, nowPlaying: nowPlaying, shelf: shelf, activities: activities, capture: capture, spectrum: spectrum)
         controller.show()
         windowController = controller
 
@@ -57,6 +61,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         nowPlaying.stop()
         activities.stop()
         systemHUD.stop()
+        spectrum.stop()
         capture.stop()
     }
 
@@ -86,6 +91,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         nowPlaying.stop()
         activities.stop()
         systemHUD.stop()
+        spectrum.stop()
         windowController?.suspendMonitors()
     }
 

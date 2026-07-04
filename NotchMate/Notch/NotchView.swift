@@ -7,6 +7,18 @@ struct NotchRootView: View {
     @ObservedObject var shelf: FileShelfModel
     @ObservedObject var activities: ActivityManager
     @ObservedObject var capture: ObsidianCapture
+    @ObservedObject var spectrum: SpectrumAnalyzer
+
+    /// Run the audio tap whenever music is playing and the screen is on — the
+    /// wave is then live in both the expanded music tab and the collapsed pill.
+    /// Gated on `screensAwake` so it isn't tapping/FFT-ing to a dark display.
+    private func syncSpectrum() {
+        if nowPlaying.isPlaying && nowPlaying.screensAwake {
+            spectrum.start()
+        } else {
+            spectrum.stop()
+        }
+    }
 
     private var islandWidth: CGFloat {
         switch viewModel.islandState {
@@ -15,7 +27,12 @@ struct NotchRootView: View {
         case .band:
             return NotchLayout.bandWidth
         case .solo:
-            // Hugs the single surviving tab group (selected icon + its label).
+            // Playing: the pill hero (cover + spectrum) has already taken over,
+            // so the capsule is pill-width — no tab label to make room for.
+            if nowPlaying.isPlaying {
+                return viewModel.collapsedWidth(isPlaying: true, hasItems: !shelf.items.isEmpty)
+            }
+            // Otherwise hug the single surviving tab group (selected icon + label).
             return viewModel.soloWidth(for: viewModel.selectedTab)
         case .condensing:
             // Already the pill's width: the capsule narrows onto the selected
@@ -40,10 +57,13 @@ struct NotchRootView: View {
                 .padding(.top, NotchLayout.islandTopGap)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .onAppear { syncSpectrum() }
         .onChange(of: nowPlaying.isPlaying) { _, playing in
             // When music starts, surface the music tab.
             if playing { viewModel.selectedTab = .music }
+            syncSpectrum()
         }
+        .onChange(of: nowPlaying.screensAwake) { _, _ in syncSpectrum() }
     }
 
     private var island: some View {
@@ -89,29 +109,45 @@ struct NotchRootView: View {
     }
 
     @ViewBuilder private var content: some View {
+        let state = viewModel.islandState
+        // When music plays, the collapse morphs toward the now-playing pill
+        // (cover + live spectrum) rather than the selected tab's icon+label —
+        // uniformly, whichever tab you close from. So from the `.solo` stage on
+        // the pill hero stands in for the tab bar and just shrinks into place;
+        // this dissolves the "close Capture while music runs" dilemma, because
+        // the collapse target depends on playback, not on the tab.
+        let pillHero = nowPlaying.isPlaying && (state == .solo || state == .condensing)
+        let showsExpanded = state != .collapsed && !pillHero
+        // Playing → the tab bar and the pill hero are *different* content, so
+        // cross-dissolve them. Not playing → the condensed icon and the pill
+        // glyph are identical, so keep the hold-opaque handover (no dip).
+        let handover: AnyTransition = nowPlaying.isPlaying ? .heroCrossfade : .iconHandover
+
         // Two explicit layers so the collapsed pill is *always* on top of the
-        // outgoing tab bar during the handover: the pill fades in over the
-        // still-opaque condensed icon, which only cuts once the pill is fully
-        // there — no crossfade brightness dip (the "flicker").
+        // outgoing tab bar during the handover.
         ZStack(alignment: .top) {
-            if viewModel.islandState != .collapsed {
+            if showsExpanded {
                 // Expanded through condensing: the tab bar is one persistent
                 // view that sheds its parts itself (pages, then unselected
                 // tabs, then labels), so nothing ever re-appears. By the time
                 // it unmounts only the selected icon is left — pixel-identical
-                // to the pill icon replacing it.
-                ExpandedView(viewModel: viewModel, nowPlaying: nowPlaying, shelf: shelf, capture: capture)
-                    .transition(.iconHandover)
+                // to the pill icon replacing it (idle case).
+                ExpandedView(viewModel: viewModel, nowPlaying: nowPlaying, shelf: shelf, capture: capture, spectrum: spectrum)
+                    .transition(handover)
             }
-            if viewModel.islandState == .collapsed {
-                if let activity = activities.current {
+            if state == .collapsed || pillHero {
+                if state == .collapsed, let activity = activities.current {
                     ActivityCompactView(activity: activity)
                         .foregroundStyle(.white)
                         .transition(.notchContent)
                 } else {
-                    CollapsedView(viewModel: viewModel, nowPlaying: nowPlaying, shelf: shelf)
+                    // The pill hero: renders continuously across solo → condensing
+                    // → collapsed when playing (one persistent view, so only the
+                    // capsule shrinks around it — no swap), or just at collapsed
+                    // when idle.
+                    CollapsedView(viewModel: viewModel, nowPlaying: nowPlaying, shelf: shelf, spectrum: spectrum)
                         .foregroundStyle(.white)
-                        .transition(.iconHandover)
+                        .transition(handover)
                 }
             }
         }
@@ -142,6 +178,14 @@ private extension AnyTransition {
             insertion: .opacity.animation(.easeOut(duration: NotchLayout.pillHandoverFade)),
             removal: .opacity.animation(.easeIn(duration: 0.12).delay(NotchLayout.pillHandoverFade))
         )
+    }
+
+    /// Symmetric cross-dissolve used when music plays and the tab bar hands off
+    /// to the now-playing pill hero (cover + spectrum) at the `.solo` stage.
+    /// Both sides fade over the same clock so the tab bar melts into the hero as
+    /// the capsule narrows — no overlap, since the two are different content.
+    static var heroCrossfade: AnyTransition {
+        .opacity.animation(.easeInOut(duration: NotchLayout.heroCrossfadeDuration))
     }
 }
 
@@ -228,6 +272,7 @@ private struct ExpandedView: View {
     @ObservedObject var nowPlaying: NowPlayingManager
     @ObservedObject var shelf: FileShelfModel
     @ObservedObject var capture: ObsidianCapture
+    @ObservedObject var spectrum: SpectrumAnalyzer
 
     private var pageIndex: Int {
         NotchViewModel.Tab.allCases.firstIndex(of: viewModel.selectedTab) ?? 0
@@ -268,7 +313,7 @@ private struct ExpandedView: View {
             if showsPages {
                 GeometryReader { geo in
                     HStack(spacing: 0) {
-                        page(.music, in: geo.size) { NowPlayingView(nowPlaying: nowPlaying) }
+                        page(.music, in: geo.size) { NowPlayingView(nowPlaying: nowPlaying, spectrum: spectrum) }
                         page(.files, in: geo.size) { ShelfView(shelf: shelf) }
                         page(.capture, in: geo.size) { CaptureView(capture: capture, viewModel: viewModel) }
                     }
@@ -370,6 +415,7 @@ private struct CollapsedView: View {
     @ObservedObject var viewModel: NotchViewModel
     @ObservedObject var nowPlaying: NowPlayingManager
     @ObservedObject var shelf: FileShelfModel
+    @ObservedObject var spectrum: SpectrumAnalyzer
 
     /// Idle glyph reflects the tab you'd return to, so it isn't always the music
     /// note when you last used another tab.
@@ -391,8 +437,16 @@ private struct CollapsedView: View {
                 }
                 .frame(width: NotchLayout.collapsedArtworkWidth, height: NotchLayout.collapsedArtworkWidth)
                 .clipShape(RoundedRectangle(cornerRadius: 3.5))
-                WaveBarsView(isActive: nowPlaying.screensAwake, count: 3, maxHeight: 12, barWidth: 2.5, spacing: 2)
-                    .frame(width: 14, height: 14)
+                WaveBarsView(
+                    isActive: nowPlaying.screensAwake,
+                    tint: nowPlaying.artworkColor,
+                    bands: spectrum.isLive ? spectrum.bands : nil,
+                    count: 3,
+                    maxHeight: 12,
+                    barWidth: 2.5,
+                    spacing: 2
+                )
+                .frame(width: 14, height: 14)
             } else {
                 Image(systemName: idleIcon)
                     .font(.system(size: NotchLayout.bandFontSize, weight: .medium))

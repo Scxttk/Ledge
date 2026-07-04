@@ -26,6 +26,8 @@
 	<true/>
 	<key>NSAppleEventsUsageDescription</key>
 	<string>NotchMate steuert Spotify und Apple Music (Wiedergabe, Titelinfo, Cover) über Apple Events.</string>
+	<key>NSAudioCaptureUsageDescription</key>
+	<string>NotchMate liest das abgespielte Audiosignal mit, um im Musik-Tab die Frequenzen des Songs als Visualizer darzustellen.</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>Copyright © 2026 Scott. Alle Rechte vorbehalten.</string>
 	<key>NSPrincipalClass</key>
