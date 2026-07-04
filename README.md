@@ -6,6 +6,16 @@
 
 <p align="center">The notch on your Mac can do more than hide a webcam.</p>
 
+<p align="center">
+  <img src="assets/notch-expanded.png" width="620" alt="NotchMate expanded into now-playing controls">
+</p>
+
+<p align="center">
+  <img src="assets/notch-collapsed.png" width="300" alt="NotchMate collapsed to a floating pill">
+  <br>
+  <sub>Hovered, it expands into controls; idle, it settles back into a floating pill.</sub>
+</p>
+
 NotchMate turns the top center of your screen into a small Dynamic Island: hover over it and it expands into media controls and a file shelf; the rest of the time it quietly shows what's going on (charging started, AirPods connected, volume changed). It lives in the menu bar, has no Dock icon, and works on Macs without a physical notch too — it just draws its own.
 
 I built this for my own setup, so some choices are opinionated. The UI is German. The quick-capture feature assumes you use Obsidian and write daily notes. If that's not you, the media controls and the shelf don't care.
