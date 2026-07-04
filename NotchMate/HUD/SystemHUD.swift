@@ -22,6 +22,11 @@ final class SystemHUD: NSObject {
     private let settings: UserSettings
     private weak var activities: ActivityManager?
     private var cancellables = Set<AnyCancellable>()
+    /// True once we're intercepting the hardware volume keys. While intercepting,
+    /// only our own key presses show the HUD — external CoreAudio volume changes
+    /// (notably AirPods' constant scalar drift) are ignored so the HUD doesn't
+    /// pop on its own.
+    private var interceptingKeys = false
 
     /// macOS adjusts volume/brightness in 1/16 steps; Shift+Option gives quarter steps.
     private static let volumeStep = 1.0 / 16.0
@@ -33,8 +38,13 @@ final class SystemHUD: NSObject {
 
     func start(presenting activities: ActivityManager) {
         self.activities = activities
-        volume.onChange = { [weak self] level, muted in
+        volume.onChange = { [weak self] level, muted, userInitiated in
             guard let self, self.settings.hudEnabled else { return }
+            // While we own the volume keys, only *our* key presses show the HUD.
+            // External changes (AirPods report constant scalar drift on their
+            // own) would otherwise pop it nonstop. When not intercepting, mirror
+            // any change additively as before.
+            if self.interceptingKeys && !userInitiated { return }
             self.activities?.present(NotchActivity(
                 kind: .timer,            // generic HUD slot
                 priority: 3,
@@ -85,6 +95,7 @@ final class SystemHUD: NSObject {
     private func updateKeyInterception() {
         guard settings.hudEnabled, settings.suppressSystemOSD else {
             keyTap.stop()
+            interceptingKeys = false
             return
         }
         // Capturing the keys needs Accessibility. Prompt once; if it isn't granted
@@ -92,12 +103,13 @@ final class SystemHUD: NSObject {
         // grants it and toggles the option again (or relaunches).
         guard MediaKeyTap.hasAccessibilityPermission(prompt: true) else {
             keyTap.stop()
+            interceptingKeys = false
             return
         }
         // Only intercept the brightness keys if brightness control actually works
         // (private DisplayServices resolved + readable); otherwise leave them to macOS.
         keyTap.handlesBrightness = brightness.isAvailable
-        keyTap.start()
+        interceptingKeys = keyTap.start()
     }
 
     /// Set brightness via the private controller and show the notch HUD directly
@@ -134,14 +146,33 @@ final class SystemHUD: NSObject {
 /// listeners only.
 private final class VolumeHUDProvider {
     /// Reports the current scalar volume and mute state on the main thread.
-    var onChange: ((_ level: Double, _ muted: Bool) -> Void)?
+    /// `userInitiated` is true when the change came from the app's own key
+    /// handling (vs. an external CoreAudio change like AirPods' scalar drift).
+    var onChange: ((_ level: Double, _ muted: Bool, _ userInitiated: Bool) -> Void)?
 
     private var device: AudioDeviceID = 0
     private var deviceListener: AudioObjectPropertyListenerBlock?
     private var muteListener: AudioObjectPropertyListenerBlock?
     private var defaultListener: AudioObjectPropertyListenerBlock?
-    private var lastLevel: Double = -1
+    /// Level at the last HUD we actually showed. Jitter is measured against this
+    /// (not the last raw read) so oscillation around a stable point never
+    /// accumulates past the threshold.
+    private var lastReportedLevel: Double = -1
     private var lastMuted = false
+    /// Minimum volume change (listener-driven) before the HUD shows — a bit under
+    /// one macOS step (1/16 ≈ 0.0625). AirPods report sub-step scalar jitter of
+    /// their own accord (~0.01); without this floor the HUD popped constantly
+    /// even when nobody touched the volume. Key presses bypass it via `force`.
+    private static let minReportDelta = 0.04
+    /// Reports before this instant are swallowed (level/mute tracked, but no HUD).
+    /// Set briefly after the default device changes: switching output (AirPods
+    /// connecting, unplugging headphones) makes CoreAudio report the *new*
+    /// device's volume, which isn't a change the user made — showing the HUD then
+    /// is the "volume bar opens on its own" bug. User key presses bypass this via
+    /// `report(force:)`.
+    private var suppressUntil = Date.distantPast
+    /// The first attach (at start) must not arm suppression — only real switches.
+    private var didInitialAttach = false
     /// Volume elements we attached a listener to, so we can remove exactly those.
     private var watchedElements: [AudioObjectPropertyElement] = []
     private var watchesMute = false
@@ -224,8 +255,9 @@ private final class VolumeHUDProvider {
             }
         }
         // Setting fires the listener, but nudge in case the value didn't change
-        // (e.g. already at a limit) so the HUD still shows.
-        report()
+        // (e.g. already at a limit) so the HUD still shows. Forced: a key press
+        // must show even inside a device-switch suppression window.
+        report(force: true)
     }
 
     private func setMute(_ muted: Bool) {
@@ -234,7 +266,7 @@ private final class VolumeHUDProvider {
         guard AudioObjectIsPropertySettable(device, &muteAddress, &settable) == noErr, settable.boolValue else { return }
         var value: UInt32 = muted ? 1 : 0
         AudioObjectSetPropertyData(device, &muteAddress, 0, nil, UInt32(MemoryLayout<UInt32>.size), &value)
-        report()
+        report(force: true)
     }
 
     private func readMute() -> Bool {
@@ -251,8 +283,11 @@ private final class VolumeHUDProvider {
         detachDeviceListeners()
         device = currentDefaultDevice()
         guard device != 0 else { return }
-        lastLevel = readVolume()
+        lastReportedLevel = readVolume()
         lastMuted = readMute()
+        // Swallow the burst of volume reports that follows a device switch.
+        if didInitialAttach { suppressUntil = Date().addingTimeInterval(0.8) }
+        didInitialAttach = true
 
         let volumeBlock: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
             DispatchQueue.main.async { self?.report() }
@@ -294,15 +329,28 @@ private final class VolumeHUDProvider {
         muteListener = nil
     }
 
-    /// Read the current level + mute and notify if either changed.
-    private func report() {
+    /// Read the current level + mute and notify if either changed. `force`
+    /// (used by the app's own key-driven changes) bypasses the post-device-switch
+    /// suppression so the user's volume presses always show the HUD.
+    private func report(force: Bool = false) {
         let level = readVolume()
         guard level >= 0 else { return }
         let muted = readMute()
-        guard abs(level - lastLevel) > 0.001 || muted != lastMuted else { return }
-        lastLevel = level
+        let bigEnough = abs(level - lastReportedLevel) >= Self.minReportDelta
+        let muteChanged = muted != lastMuted
+        // Ignore CoreAudio's sub-step scalar jitter (AirPods report it on their
+        // own); only a real step-sized change, a mute toggle, or a user key
+        // press (force) surfaces the HUD.
+        guard force || bigEnough || muteChanged else { return }
+        // Track the new baseline but stay silent during the device-switch window.
+        guard force || Date() >= suppressUntil else {
+            lastReportedLevel = level
+            lastMuted = muted
+            return
+        }
+        lastReportedLevel = level
         lastMuted = muted
-        onChange?(level, muted)
+        onChange?(level, muted, force)
     }
 
     private func currentDefaultDevice() -> AudioDeviceID {
