@@ -250,7 +250,13 @@ private struct ExpandedView: View {
                 // only the selected one. Labels survive until .condensing, where
                 // the text drops and just the icon remains.
                 showsAllTabs: viewModel.islandState == .expanded || viewModel.islandState == .band,
-                showsLabels: viewModel.islandState != .condensing
+                // Labels live only in expanded/band/solo. Must be false in
+                // .collapsed too, not just .condensing: while the tab bar is
+                // held opaque during the pill handover, `!= .condensing` would
+                // flip true again and fade the label back in ("Mu" reappears).
+                showsLabels: viewModel.islandState == .expanded
+                    || viewModel.islandState == .band
+                    || viewModel.islandState == .solo
             )
             .frame(maxWidth: .infinity)
             .frame(height: NotchLayout.collapsedHeight)
@@ -315,28 +321,44 @@ private struct NotchTabBar: View {
     @ViewBuilder
     private func tab(title: String, icon: String, value: NotchViewModel.Tab) -> some View {
         if showsAllTabs || selection == value {
+            let isSelected = selection == value
+            // Solo/condensing (this is the only tab): pin the *icon* at the
+            // capsule centre — exactly where the pill icon will sit — so that
+            // collapsing further only fades the label and shrinks the capsule;
+            // the icon never moves again and the pill handover is pixel-exact.
+            let soloMode = !showsAllTabs
             Button {
                 guard selection != value else { return }
                 Haptics.perform(.alignment)
                 withAnimation(NotchLayout.tabChangeAnimation) { selection = value }
             } label: {
-                HStack(spacing: 4) {
+                HStack(spacing: NotchLayout.tabIconLabelSpacing) {
+                    if soloMode {
+                        // An invisible mirror of the real label, left of the
+                        // icon: it reserves exactly the label's own width (real
+                        // text metrics, no estimate), so the symmetric HStack
+                        // centres the icon precisely. `.opacity(0)` (not
+                        // `.hidden()`, which drops its layout space here) keeps
+                        // the space through the label fade, so the icon holds
+                        // dead centre — no wander, no flicker at the handover.
+                        Text(title).fixedSize().opacity(0)
+                    }
                     // Every icon renders itself, always — switching tabs must only
                     // change the highlight (foreground opacity), never replace or
                     // move the icon view, or it visibly pops back in.
                     Image(systemName: icon)
-                    if showsLabels {
-                        // Fades fast (see condenseFadeAnimation); the layout
-                        // space it frees still collapses with the ambient
-                        // spring, sliding the icon toward the centre.
-                        Text(title)
-                            .transition(.opacity.animation(NotchLayout.condenseFadeAnimation))
-                    }
+                    // The label stays in the layout even when hidden (fixed size,
+                    // opacity only) so the mirror stays balanced; it just fades
+                    // fast while the capsule narrows over it.
+                    Text(title)
+                        .fixedSize()
+                        .opacity(showsLabels ? 1 : 0)
+                        .animation(NotchLayout.condenseFadeAnimation, value: showsLabels)
                 }
                 .font(.system(size: NotchLayout.bandFontSize, weight: .medium))
                 .padding(.vertical, 3)
                 .padding(.horizontal, 10)
-                .foregroundStyle(.white.opacity(selection == value ? 1 : 0.55))
+                .foregroundStyle(.white.opacity(isSelected ? 1 : 0.55))
             }
             .buttonStyle(.plain)
             .transition(.opacity.animation(NotchLayout.condenseFadeAnimation))

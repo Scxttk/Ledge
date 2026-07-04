@@ -64,10 +64,13 @@ final class NotchViewModel: ObservableObject {
         return core + 2 * (NotchLayout.collapsedContentPadding + NotchLayout.collapsedEndPadding)
     }
 
-    /// Width of the intermediate `.solo` capsule, hugging the single selected
-    /// tab group (icon + its label) so it doesn't sit loose. The label width
-    /// is estimated from the localized title; slight looseness is harmless,
-    /// clipping is not, so the estimate errs generous.
+    /// Width of the intermediate `.solo` capsule. The icon is pinned at the
+    /// capsule *centre* (its final pill position) with the label trailing to
+    /// the right, so collapsing on further only fades the label and shrinks the
+    /// capsule — the icon never moves. Keeping the icon centred means the label
+    /// width is mirrored as empty space on the left, hence the label counts
+    /// twice. The estimate errs generous; slight looseness is harmless,
+    /// clipping is not.
     func soloWidth(for tab: Tab) -> CGFloat {
         let title: String
         switch tab {
@@ -76,7 +79,7 @@ final class NotchViewModel: ObservableObject {
         case .capture: title = String(localized: "tab.capture", defaultValue: "Capture")
         }
         let labelWidth = CGFloat(title.count) * NotchLayout.soloLabelCharWidth
-        return NotchLayout.soloBaseWidth + labelWidth
+        return NotchLayout.soloBaseWidth + 2 * labelWidth
     }
 
     // The panel keeps a constant size; only the SwiftUI island animates.

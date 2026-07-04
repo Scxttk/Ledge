@@ -477,6 +477,8 @@ final class NotchWindowController {
         guard stagingTarget != target else { return }  // already walking there
         stageWorkItem?.cancel(); stageWorkItem = nil
         stagingTarget = target
+        // One tap the moment the morph is triggered — not per stage, which felt
+        // like too much.
         Haptics.perform(.levelChange)
         advanceStaging()
     }

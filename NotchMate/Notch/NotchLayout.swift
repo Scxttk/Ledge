@@ -55,10 +55,14 @@ enum NotchLayout {
     /// (~255pt natural) with breathing room to the rounded ends.
     static let bandWidth: CGFloat = 300
     /// `.solo` stage width is per selected tab (`NotchViewModel.soloWidth`);
-    /// these size the estimate — a fixed base (icon + spacing + button and end
-    /// padding) plus the label's estimated width.
-    static let soloBaseWidth: CGFloat = 78
+    /// these size the estimate — a fixed base (icon + spacings + button and end
+    /// padding + the two content insets) plus the label's estimated width,
+    /// counted twice since the centred icon mirrors the label as empty space.
+    static let soloBaseWidth: CGFloat = 74
     static let soloLabelCharWidth: CGFloat = 8
+    /// HStack spacing between a tab's icon and its label — also the amount the
+    /// solo tab is shifted by to re-centre the icon.
+    static let tabIconLabelSpacing: CGFloat = 4
 
     /// How long the island rests in each transient stage before advancing —
     /// long enough to read the intermediate shape, short enough that the whole
@@ -71,9 +75,9 @@ enum NotchLayout {
     /// narrows to pill width) runs before the pill content swaps in — roughly
     /// the collapse spring's settling time, so the swap lands on a still image.
     static let condenseSwapDelay: TimeInterval = 0.42
-    static let condenseExpandDelay: TimeInterval = 0.2  // .condensing → .solo
-    static let soloExpandDelay: TimeInterval = 0.22     // .solo → .band
-    static let bandExpandDelay: TimeInterval = 0.26     // .band → .expanded
+    static let condenseExpandDelay: TimeInterval = 0.1   // .condensing → .solo
+    static let soloExpandDelay: TimeInterval = 0.12      // .solo → .band
+    static let bandExpandDelay: TimeInterval = 0.14      // .band → .expanded
 
     /// Fade of the labels and the unselected tabs as the capsule narrows around
     /// the surviving content. Deliberately much faster than the width spring:
@@ -168,9 +172,9 @@ enum NotchLayout {
     /// bounce-free `.smooth` spring: collapsing reads as a calm, silky settling,
     /// never a snap or wobble.
     static let islandCollapseAnimation: Animation = .smooth(duration: 0.6)
-    /// Same for each *expand* stage — the mirror of the collapse, a touch
-    /// quicker so opening still feels responsive, but equally bounce-free.
-    static let islandExpandAnimation: Animation = .smooth(duration: 0.44)
+    /// Same for each *expand* stage — the mirror of the collapse, but notably
+    /// quicker so opening on hover feels snappy, still bounce-free.
+    static let islandExpandAnimation: Animation = .smooth(duration: 0.34)
 
     /// Content fade-in on expand: slightly delayed so it appears once the
     /// silhouette has grown enough room, then a quick easeOut.
