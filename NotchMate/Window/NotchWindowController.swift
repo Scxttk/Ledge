@@ -81,22 +81,8 @@ final class NotchWindowController {
         container = NotchContainerView(frame: frame)
         container.islandRect = { [weak self, weak container] in
             guard let self, let container else { return .zero }
-            let viewModel = self.viewModel
+            let (width, height) = self.currentIslandSize()
             let bounds = container.bounds
-            let width: CGFloat
-            let height: CGFloat
-            // Stay at the expanded footprint through the whole staged walk, not
-            // only at the terminal `.expanded` state — otherwise clicks fall
-            // through the still-visible large island while it collapses.
-            if viewModel.occupiesExpandedFootprint {
-                width = viewModel.expandedWidth
-                height = viewModel.expandedHeight
-            } else {
-                // Hug the visible pill (which sizes to its content) plus a small
-                // tolerance, so it only expands when hovering the notch itself.
-                width = viewModel.collapsedWidth(isPlaying: self.nowPlaying.isPlaying, hasItems: !self.shelf.items.isEmpty, timerText: self.pomodoro.pillText) + NotchLayout.hitTestWidthPadding
-                height = viewModel.collapsedHeight + NotchLayout.hitTestHeightPadding
-            }
             // The island floats `islandTopGap` below the container's top edge.
             return NSRect(
                 x: (bounds.width - width) / 2,
@@ -145,6 +131,7 @@ final class NotchWindowController {
     func show() {
         reposition()
         panel.orderFrontRegardless()
+        updateClickThrough()
     }
 
     // MARK: - Sleep/Wake lifecycle
@@ -205,6 +192,10 @@ final class NotchWindowController {
         // Open directly (not through the staged reveal) so the field is ready
         // to type into immediately.
         setExpanded(true, staged: false)
+        // Hotkey-driven, not cursor-driven: force interactive regardless of
+        // where the cursor happens to be, or the field could be unclickable
+        // until the mouse moves over it.
+        panel.ignoresMouseEvents = false
         panel.makeKeyAndOrderFront(nil)
         viewModel.requestCaptureFocus()
     }
@@ -251,6 +242,53 @@ final class NotchWindowController {
             self?.evaluateHover()
             return event
         }
+    }
+
+    /// The current interactive footprint's size — matches what
+    /// `NotchContainerView.hitTest` actually accepts clicks within. Shared by
+    /// `container.islandRect` (view-local) and `interactiveScreenRect` (screen
+    /// coordinates) so the two never drift apart.
+    private func currentIslandSize() -> (width: CGFloat, height: CGFloat) {
+        // Stay at the expanded footprint through the whole staged walk, not
+        // only at the terminal `.expanded` state — otherwise clicks fall
+        // through the still-visible large island while it collapses.
+        if viewModel.occupiesExpandedFootprint {
+            return (viewModel.expandedWidth, viewModel.expandedHeight)
+        }
+        // Hug the visible pill (which sizes to its content) plus a small
+        // tolerance, so it only expands when hovering the notch itself.
+        let width = viewModel.collapsedWidth(isPlaying: nowPlaying.isPlaying, hasItems: !shelf.items.isEmpty, timerText: pomodoro.pillText) + NotchLayout.hitTestWidthPadding
+        let height = viewModel.collapsedHeight + NotchLayout.hitTestHeightPadding
+        return (width, height)
+    }
+
+    /// The actual clickable footprint in global screen coordinates — the same
+    /// rect `NotchContainerView.hitTest` honors, without the extra hover
+    /// tolerance `islandScreenRect` adds for open/close hysteresis. Used to
+    /// gate `panel.ignoresMouseEvents` so the panel only ever claims clicks
+    /// within the area that's actually interactive.
+    private func interactiveScreenRect() -> NSRect? {
+        guard let screen = ScreenManager.targetScreen() else { return nil }
+        let (width, height) = currentIslandSize()
+        return NSRect(
+            x: screen.frame.midX - width / 2,
+            y: screen.frame.maxY - NotchLayout.islandTopGap - height,
+            width: width,
+            height: height
+        )
+    }
+
+    /// Keep the panel click-through outside its visible footprint: the real
+    /// `NSPanel` frame is always sized for the expanded island plus shadow
+    /// margin (see `reposition`), so without this, clicks in the leftover
+    /// space around a collapsed pill would still make the panel (and app) key
+    /// — `NotchContainerView.hitTest` only stops the *content* from reacting,
+    /// it doesn't stop AppKit's window-level activation on mouse-down.
+    private func updateClickThrough() {
+        guard !menuBarOverlapActive else { return }  // setMenuBarOverlap already forces this
+        let cursor = NSEvent.mouseLocation
+        let inside = interactiveScreenRect()?.contains(cursor) ?? false
+        panel.ignoresMouseEvents = !inside
     }
 
     /// The visible island rect in global screen coordinates (origin bottom-left),
@@ -311,6 +349,7 @@ final class NotchWindowController {
         }
         lastEvaluatedCursor = cursor
         followCursorScreenIfNeeded()
+        updateClickThrough()
 
         // Only the resting `.expanded` state gets the big hover rect. Every
         // other state — including `.band`/`.solo`, which still render fairly
@@ -528,6 +567,7 @@ final class NotchWindowController {
             stagingTarget = nil
             withAnimation(NotchLayout.islandExpandAnimation) { viewModel.islandState = target }
             Haptics.perform(.levelChange)
+            updateClickThrough()
             return
         }
         guard stagingTarget != target else { return }  // already walking there
@@ -565,6 +605,7 @@ final class NotchWindowController {
                 viewModel.islandState = next
             }
         }
+        updateClickThrough()
 
         guard next != target else {
             stagingTarget = nil; stageWorkItem = nil
