@@ -28,6 +28,7 @@ final class SpectrumAnalyzer: ObservableObject {
     // Rebuilds the tap when the user switches output device (e.g. AirPods
     // in/out): the aggregate can otherwise keep feeding silent samples forever.
     private var deviceChangeListener: AudioObjectPropertyListenerBlock?
+    private var pendingRebuild: DispatchWorkItem?
     private var deviceChangeAddress = AudioObjectPropertyAddress(
         mSelector: kAudioHardwarePropertyDefaultOutputDevice,
         mScope: kAudioObjectPropertyScopeGlobal,
@@ -134,6 +135,8 @@ final class SpectrumAnalyzer: ObservableObject {
 
     func stop() {
         let wasRunning = aggregateID != 0 || tapID != 0
+        pendingRebuild?.cancel()
+        pendingRebuild = nil
         teardown()
         unregisterDeviceChangeListener()
         guard wasRunning else { return }
@@ -185,10 +188,25 @@ final class SpectrumAnalyzer: ObservableObject {
     /// The existing aggregate can silently keep feeding zero samples, so this
     /// does a full teardown + rebuild of the tap and aggregate rather than just
     /// restarting the IOProc.
+    ///
+    /// The listener fires on `queue` — the same queue the IOProc dispatches to.
+    /// Tearing the IOProc down from its own queue deadlocks the HAL
+    /// (`AudioDeviceDestroyIOProcID` waits synchronously for in-flight IO
+    /// blocks), so hop to the main thread, where `start`/`stop` already run.
+    /// A device switch also fires the notification several times in a burst
+    /// while routing settles, so debounce before rebuilding.
     private func rebuildForDeviceChange() {
-        guard running else { return }
-        teardown()
-        start()
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.pendingRebuild?.cancel()
+            let work = DispatchWorkItem { [weak self] in
+                guard let self, self.running else { return }
+                self.teardown()
+                self.start()
+            }
+            self.pendingRebuild = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: work)
+        }
     }
 
     // MARK: - Audio thread
