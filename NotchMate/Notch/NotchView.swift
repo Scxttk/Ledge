@@ -6,6 +6,7 @@ struct NotchRootView: View {
     @ObservedObject var nowPlaying: NowPlayingManager
     @ObservedObject var shelf: FileShelfModel
     @ObservedObject var activities: ActivityManager
+    @ObservedObject var pomodoro: PomodoroManager
     @ObservedObject var capture: ObsidianCapture
     @ObservedObject var spectrum: SpectrumAnalyzer
 
@@ -27,22 +28,23 @@ struct NotchRootView: View {
         case .band:
             return NotchLayout.bandWidth
         case .solo:
-            // Playing: the pill hero (cover + spectrum) has already taken over,
-            // so the capsule is pill-width — no tab label to make room for.
-            if nowPlaying.isPlaying {
-                return viewModel.collapsedWidth(isPlaying: true, hasItems: !shelf.items.isEmpty)
+            // Playing or timing: the pill hero (cover + spectrum and/or timer
+            // readout) has already taken over, so the capsule is pill-width —
+            // no tab label to make room for.
+            if nowPlaying.isPlaying || pomodoro.pillText != nil {
+                return viewModel.collapsedWidth(isPlaying: nowPlaying.isPlaying, hasItems: !shelf.items.isEmpty, timerText: pomodoro.pillText)
             }
             // Otherwise hug the single surviving tab group (selected icon + label).
             return viewModel.soloWidth(for: viewModel.selectedTab)
         case .condensing:
             // Already the pill's width: the capsule narrows onto the selected
             // icon during this stage, so the final swap changes nothing.
-            return viewModel.collapsedWidth(isPlaying: nowPlaying.isPlaying, hasItems: !shelf.items.isEmpty)
+            return viewModel.collapsedWidth(isPlaying: nowPlaying.isPlaying, hasItems: !shelf.items.isEmpty, timerText: pomodoro.pillText)
         case .collapsed:
             if let activity = activities.current {
                 return activity.kind == .audioRoute ? NotchLayout.activityRouteWidth : NotchLayout.activityWidth
             }
-            return viewModel.collapsedWidth(isPlaying: nowPlaying.isPlaying, hasItems: !shelf.items.isEmpty)
+            return viewModel.collapsedWidth(isPlaying: nowPlaying.isPlaying, hasItems: !shelf.items.isEmpty, timerText: pomodoro.pillText)
         }
     }
     private var islandHeight: CGFloat {
@@ -110,18 +112,20 @@ struct NotchRootView: View {
 
     @ViewBuilder private var content: some View {
         let state = viewModel.islandState
-        // When music plays, the collapse morphs toward the now-playing pill
-        // (cover + live spectrum) rather than the selected tab's icon+label —
-        // uniformly, whichever tab you close from. So from the `.solo` stage on
-        // the pill hero stands in for the tab bar and just shrinks into place;
-        // this dissolves the "close Capture while music runs" dilemma, because
-        // the collapse target depends on playback, not on the tab.
-        let pillHero = nowPlaying.isPlaying && (state == .solo || state == .condensing)
+        // When music plays or a focus timer is active, the collapse morphs
+        // toward the pill content (cover + live spectrum and/or timer readout)
+        // rather than the selected tab's icon+label — uniformly, whichever tab
+        // you close from. So from the `.solo` stage on the pill hero stands in
+        // for the tab bar and just shrinks into place; this dissolves the
+        // "close Capture while music runs" dilemma, because the collapse
+        // target depends on the pill content, not on the tab.
+        let heroContent = nowPlaying.isPlaying || pomodoro.pillText != nil
+        let pillHero = heroContent && (state == .solo || state == .condensing)
         let showsExpanded = state != .collapsed && !pillHero
-        // Playing → the tab bar and the pill hero are *different* content, so
-        // cross-dissolve them. Not playing → the condensed icon and the pill
+        // Hero content → the tab bar and the pill hero are *different* content,
+        // so cross-dissolve them. Otherwise the condensed icon and the pill
         // glyph are identical, so keep the hold-opaque handover (no dip).
-        let handover: AnyTransition = nowPlaying.isPlaying ? .heroCrossfade : .iconHandover
+        let handover: AnyTransition = heroContent ? .heroCrossfade : .iconHandover
 
         // Two explicit layers so the collapsed pill is *always* on top of the
         // outgoing tab bar during the handover.
@@ -132,7 +136,7 @@ struct NotchRootView: View {
                 // tabs, then labels), so nothing ever re-appears. By the time
                 // it unmounts only the selected icon is left — pixel-identical
                 // to the pill icon replacing it (idle case).
-                ExpandedView(viewModel: viewModel, nowPlaying: nowPlaying, shelf: shelf, capture: capture, spectrum: spectrum)
+                ExpandedView(viewModel: viewModel, nowPlaying: nowPlaying, shelf: shelf, pomodoro: pomodoro, capture: capture, spectrum: spectrum)
                     .transition(handover)
             }
             if state == .collapsed || pillHero {
@@ -145,7 +149,7 @@ struct NotchRootView: View {
                     // → collapsed when playing (one persistent view, so only the
                     // capsule shrinks around it — no swap), or just at collapsed
                     // when idle.
-                    CollapsedView(viewModel: viewModel, nowPlaying: nowPlaying, shelf: shelf, spectrum: spectrum)
+                    CollapsedView(viewModel: viewModel, nowPlaying: nowPlaying, shelf: shelf, pomodoro: pomodoro, spectrum: spectrum)
                         .foregroundStyle(.white)
                         .transition(handover)
                 }
@@ -271,6 +275,7 @@ private struct ExpandedView: View {
     @ObservedObject var viewModel: NotchViewModel
     @ObservedObject var nowPlaying: NowPlayingManager
     @ObservedObject var shelf: FileShelfModel
+    @ObservedObject var pomodoro: PomodoroManager
     @ObservedObject var capture: ObsidianCapture
     @ObservedObject var spectrum: SpectrumAnalyzer
 
@@ -316,6 +321,7 @@ private struct ExpandedView: View {
                         page(.music, in: geo.size) { NowPlayingView(nowPlaying: nowPlaying, spectrum: spectrum) }
                         page(.files, in: geo.size) { ShelfView(shelf: shelf) }
                         page(.capture, in: geo.size) { CaptureView(capture: capture, viewModel: viewModel) }
+                        page(.timer, in: geo.size) { PomodoroView(pomodoro: pomodoro) }
                     }
                     .offset(x: -CGFloat(pageIndex) * geo.size.width)
                 }
@@ -360,6 +366,7 @@ private struct NotchTabBar: View {
             tab(title: String(localized: "tab.music", defaultValue: "Musik"), icon: "music.note", value: .music)
             tab(title: String(localized: "tab.files", defaultValue: "Ablage"), icon: "tray.full", value: .files)
             tab(title: String(localized: "tab.capture", defaultValue: "Capture"), icon: "square.and.pencil", value: .capture)
+            tab(title: String(localized: "tab.timer", defaultValue: "Timer"), icon: "timer", value: .timer)
         }
     }
 
@@ -415,6 +422,7 @@ private struct CollapsedView: View {
     @ObservedObject var viewModel: NotchViewModel
     @ObservedObject var nowPlaying: NowPlayingManager
     @ObservedObject var shelf: FileShelfModel
+    @ObservedObject var pomodoro: PomodoroManager
     @ObservedObject var spectrum: SpectrumAnalyzer
 
     /// Idle glyph reflects the tab you'd return to, so it isn't always the music
@@ -424,6 +432,7 @@ private struct CollapsedView: View {
         case .music: return "music.note"
         case .files: return "tray.full"
         case .capture: return "square.and.pencil"
+        case .timer: return "timer"
         }
     }
 
@@ -456,9 +465,16 @@ private struct CollapsedView: View {
                     spacing: NotchLayout.collapsedWaveSpacing
                 )
                 .frame(width: NotchLayout.collapsedWavesWidth, height: NotchLayout.collapsedWavesWidth)
-            } else {
+            } else if pomodoro.pillText == nil {
                 Image(systemName: idleIcon)
                     .font(.system(size: NotchLayout.bandFontSize, weight: .medium))
+            }
+
+            // The focus-timer readout joins to the right of the artwork + wave
+            // while music plays and stands alone otherwise (it replaces the
+            // idle glyph above rather than crowding it).
+            if let readout = pomodoro.pillText {
+                timerSegment(readout)
             }
 
             if !shelf.items.isEmpty {
@@ -473,5 +489,21 @@ private struct CollapsedView: View {
         // so the glyph starts mid-island and drifts up — the diagonal flight.
         .frame(height: NotchLayout.collapsedHeight)
         .frame(maxHeight: .infinity, alignment: .top)
+    }
+
+    /// The passive focus-timer readout. Sizes must stay in lock-step with the
+    /// width estimate in `NotchViewModel.timerSegmentWidth`.
+    private func timerSegment(_ readout: String) -> some View {
+        let paused = pomodoro.phase == .paused
+        return HStack(spacing: NotchLayout.collapsedTimerInnerSpacing) {
+            Image(systemName: paused ? "pause.fill" : "timer")
+                .font(.system(size: NotchLayout.collapsedTimerIconSize, weight: .semibold))
+                .foregroundStyle(paused ? Color.white.opacity(0.55) : Color.orange)
+                .frame(width: NotchLayout.collapsedTimerIconWidth)
+            Text(readout)
+                .font(.system(size: NotchLayout.collapsedTimerFontSize, weight: .semibold))
+                .monospacedDigit()
+                .opacity(paused ? 0.55 : 1)
+        }
     }
 }

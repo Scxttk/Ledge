@@ -7,6 +7,7 @@ final class NotchWindowController {
     private let nowPlaying: NowPlayingManager
     private let shelf: FileShelfModel
     private let activities: ActivityManager
+    private let pomodoro: PomodoroManager
     private let container: NotchContainerView
 
     private var collapseWorkItem: DispatchWorkItem?
@@ -63,16 +64,17 @@ final class NotchWindowController {
     /// (trackpad momentum keeps firing events; we only act on a fresh gesture).
     private var lastHorizontalScroll = Date.distantPast
 
-    init(viewModel: NotchViewModel, nowPlaying: NowPlayingManager, shelf: FileShelfModel, activities: ActivityManager, capture: ObsidianCapture, spectrum: SpectrumAnalyzer) {
+    init(viewModel: NotchViewModel, nowPlaying: NowPlayingManager, shelf: FileShelfModel, activities: ActivityManager, pomodoro: PomodoroManager, capture: ObsidianCapture, spectrum: SpectrumAnalyzer) {
         self.viewModel = viewModel
         self.nowPlaying = nowPlaying
         self.shelf = shelf
         self.activities = activities
+        self.pomodoro = pomodoro
 
         let frame = NSRect(x: 0, y: 0, width: viewModel.panelWidth, height: viewModel.panelHeight)
         panel = NotchPanel(contentRect: frame)
 
-        let root = NotchRootView(viewModel: viewModel, nowPlaying: nowPlaying, shelf: shelf, activities: activities, capture: capture, spectrum: spectrum)
+        let root = NotchRootView(viewModel: viewModel, nowPlaying: nowPlaying, shelf: shelf, activities: activities, pomodoro: pomodoro, capture: capture, spectrum: spectrum)
         let hostingView = NSHostingView(rootView: root)
         hostingView.translatesAutoresizingMaskIntoConstraints = false
 
@@ -92,7 +94,7 @@ final class NotchWindowController {
             } else {
                 // Hug the visible pill (which sizes to its content) plus a small
                 // tolerance, so it only expands when hovering the notch itself.
-                width = viewModel.collapsedWidth(isPlaying: self.nowPlaying.isPlaying, hasItems: !self.shelf.items.isEmpty) + NotchLayout.hitTestWidthPadding
+                width = viewModel.collapsedWidth(isPlaying: self.nowPlaying.isPlaying, hasItems: !self.shelf.items.isEmpty, timerText: self.pomodoro.pillText) + NotchLayout.hitTestWidthPadding
                 height = viewModel.collapsedHeight + NotchLayout.hitTestHeightPadding
             }
             // The island floats `islandTopGap` below the container's top edge.
@@ -262,7 +264,7 @@ final class NotchWindowController {
             width = viewModel.expandedWidth + NotchLayout.expandedHoverInset * 2
             height = viewModel.expandedHeight + NotchLayout.expandedHoverInset
         } else {
-            width = viewModel.collapsedWidth(isPlaying: nowPlaying.isPlaying, hasItems: !shelf.items.isEmpty) + NotchLayout.collapsedHoverInset * 2
+            width = viewModel.collapsedWidth(isPlaying: nowPlaying.isPlaying, hasItems: !shelf.items.isEmpty, timerText: pomodoro.pillText) + NotchLayout.collapsedHoverInset * 2
             height = viewModel.collapsedHeight + NotchLayout.collapsedHoverInset
         }
         // The island floats `islandTopGap` below the edge, but the hover zone

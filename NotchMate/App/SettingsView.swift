@@ -16,6 +16,9 @@ struct SettingsView: View {
             FeatureSettings(settings: settings)
                 .tabItem { Label(String(localized: "settings.features", defaultValue: "Features"), systemImage: "sparkles") }
 
+            TimerSettings(settings: settings)
+                .tabItem { Label(String(localized: "settings.timer", defaultValue: "Timer"), systemImage: "timer") }
+
             ObsidianSettings(settings: settings)
                 .tabItem { Label(String(localized: "settings.obsidian", defaultValue: "Obsidian"), systemImage: "square.and.pencil") }
 
@@ -123,6 +126,65 @@ private struct FeatureSettings: View {
             Toggle(String(localized: "settings.hud", defaultValue: "HUD-Ersatz (Lautstärke/Helligkeit)"), isOn: $settings.hudEnabled)
             Toggle(String(localized: "settings.suppressOSD", defaultValue: "Lautstärke & Helligkeit nur in der Notch (Bedienungshilfen nötig)"), isOn: $settings.suppressSystemOSD)
                 .disabled(!settings.hudEnabled)
+        }
+        .formStyle(.grouped)
+        .padding()
+    }
+}
+
+private struct TimerSettings: View {
+    @ObservedObject var settings: UserSettings
+
+    var body: some View {
+        Form {
+            Section {
+                ForEach($settings.timerPresets) { $preset in
+                    HStack(spacing: 12) {
+                        TextField(
+                            String(localized: "settings.timer.name", defaultValue: "Name"),
+                            text: $preset.name,
+                            prompt: Text(String(localized: "settings.timer.name", defaultValue: "Name"))
+                        )
+                        .labelsHidden()
+                        Spacer(minLength: 0)
+                        Stepper(value: $preset.minutes, in: 1...180) {
+                            Text(String(localized: "settings.timer.minutes", defaultValue: "\(preset.minutes) min"))
+                                .monospacedDigit()
+                                .frame(minWidth: 56, alignment: .trailing)
+                        }
+                        Button {
+                            settings.timerPresets.removeAll { $0.id == preset.id }
+                        } label: {
+                            Image(systemName: "minus.circle.fill")
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .onMove { settings.timerPresets.move(fromOffsets: $0, toOffset: $1) }
+
+                Button {
+                    settings.timerPresets.append(
+                        TimerPreset(name: String(localized: "timer.preset.new", defaultValue: "Neuer Timer"), minutes: 25)
+                    )
+                } label: {
+                    Label(String(localized: "settings.timer.add", defaultValue: "Timer hinzufügen"), systemImage: "plus")
+                }
+            } header: {
+                Text(String(localized: "settings.timer.presets", defaultValue: "Voreinstellungen"))
+            } footer: {
+                Text(String(localized: "settings.timer.chainHint", defaultValue: "Die Reihenfolge der Liste bestimmt die Kette beim automatischen Fortsetzen."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section {
+                Toggle(String(localized: "settings.timer.countUp", defaultValue: "Aufwärts zählen (verstrichene Zeit)"), isOn: $settings.timerCountsUp)
+                Toggle(String(localized: "settings.timer.autoChain", defaultValue: "Automatisch mit nächstem Timer fortsetzen"), isOn: $settings.timerAutoChain)
+                Toggle(String(localized: "settings.timer.sound", defaultValue: "Ton bei Ablauf"), isOn: $settings.timerSoundEnabled)
+            } header: {
+                Text(String(localized: "settings.timer.behavior", defaultValue: "Verhalten"))
+            }
         }
         .formStyle(.grouped)
         .padding()

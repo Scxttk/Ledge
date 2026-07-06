@@ -5,6 +5,7 @@ final class NotchViewModel: ObservableObject {
         case music
         case files
         case capture
+        case timer
     }
 
     /// The island's visual state. Collapsing is staged (iPhone-style):
@@ -64,17 +65,34 @@ final class NotchViewModel: ObservableObject {
     var expandedHeight: CGFloat { NotchLayout.expandedHeight }
 
     /// Collapsed pill width, computed to hug whatever the pill actually shows.
-    /// Depends on both playback (artwork + visualizer are wider than the idle
-    /// glyph) and the shelf badge, plus the end padding that keeps content
-    /// clear of the capsule's corner curve — otherwise the clip swallows edges.
-    func collapsedWidth(isPlaying: Bool, hasItems: Bool) -> CGFloat {
-        var core = isPlaying
-            ? NotchLayout.collapsedArtworkWidth + NotchLayout.collapsedItemSpacing + NotchLayout.collapsedWavesWidth
-            : NotchLayout.collapsedGlyphWidth
+    /// Depends on playback (artwork + visualizer are wider than the idle
+    /// glyph), the focus-timer readout (replaces the glyph when idle, joins to
+    /// the right of the visualizer when playing) and the shelf badge, plus the
+    /// end padding that keeps content clear of the capsule's corner curve —
+    /// otherwise the clip swallows edges.
+    func collapsedWidth(isPlaying: Bool, hasItems: Bool, timerText: String?) -> CGFloat {
+        var core: CGFloat
+        if isPlaying {
+            core = NotchLayout.collapsedArtworkWidth + NotchLayout.collapsedItemSpacing + NotchLayout.collapsedWavesWidth
+            if let timerText {
+                core += NotchLayout.collapsedItemSpacing + Self.timerSegmentWidth(timerText)
+            }
+        } else if let timerText {
+            core = Self.timerSegmentWidth(timerText)
+        } else {
+            core = NotchLayout.collapsedGlyphWidth
+        }
         if hasItems {
             core += NotchLayout.collapsedItemSpacing + NotchLayout.collapsedBadgeWidth
         }
         return core + 2 * (NotchLayout.collapsedContentPadding + NotchLayout.collapsedEndPadding)
+    }
+
+    /// Estimated width of the pill's timer segment (icon + readout). Must stay
+    /// in lock-step with the segment layout in `CollapsedView`.
+    private static func timerSegmentWidth(_ text: String) -> CGFloat {
+        NotchLayout.collapsedTimerIconWidth + NotchLayout.collapsedTimerInnerSpacing
+            + CGFloat(text.count) * NotchLayout.collapsedTimerCharWidth
     }
 
     /// Width of the intermediate `.solo` capsule. The icon is pinned at the
@@ -90,6 +108,7 @@ final class NotchViewModel: ObservableObject {
         case .music:   title = String(localized: "tab.music", defaultValue: "Musik")
         case .files:   title = String(localized: "tab.files", defaultValue: "Ablage")
         case .capture: title = String(localized: "tab.capture", defaultValue: "Capture")
+        case .timer:   title = String(localized: "tab.timer", defaultValue: "Timer")
         }
         let labelWidth = CGFloat(title.count) * NotchLayout.soloLabelCharWidth
         return NotchLayout.soloBaseWidth + 2 * labelWidth

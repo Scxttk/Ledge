@@ -44,6 +44,16 @@ enum NotchLayout {
     static let collapsedBadgeFontSize: CGFloat = 9
     /// The shelf badge (tray icon + item count, up to ~2 digits).
     static let collapsedBadgeWidth: CGFloat = 30
+    /// Focus-timer segment in the collapsed pill (icon + monospaced readout).
+    /// Its width is estimated as icon + inner spacing + chars × per-char width
+    /// (see `NotchViewModel.collapsedWidth`); the per-char estimate errs
+    /// generous like `soloLabelCharWidth` — looseness is harmless, clipping
+    /// is not.
+    static let collapsedTimerFontSize: CGFloat = 11
+    static let collapsedTimerIconSize: CGFloat = 10
+    static let collapsedTimerIconWidth: CGFloat = 12
+    static let collapsedTimerInnerSpacing: CGFloat = 3
+    static let collapsedTimerCharWidth: CGFloat = 7
     /// Spacing between the collapsed HStack items.
     static let collapsedItemSpacing: CGFloat = 6
     /// Horizontal breathing room inside the pill (matches `CollapsedView`).
@@ -60,9 +70,9 @@ enum NotchLayout {
     static let expandedWidth: CGFloat = 460
     static let expandedHeight: CGFloat = 212
 
-    /// Width of the `.band` stage: a capsule holding all three icon+label tabs
-    /// (~255pt natural) with breathing room to the rounded ends.
-    static let bandWidth: CGFloat = 300
+    /// Width of the `.band` stage: a capsule holding all four icon+label tabs
+    /// (~335pt natural) with breathing room to the rounded ends.
+    static let bandWidth: CGFloat = 380
     /// `.solo` stage width is per selected tab (`NotchViewModel.soloWidth`);
     /// these size the estimate — a fixed base (icon + spacings + button and end
     /// padding + the two content insets) plus the label's estimated width,

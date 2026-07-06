@@ -16,13 +16,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// driven centrally in `NotchRootView` off playback + screen state.
     let spectrum = SpectrumAnalyzer(bandCount: 5)
     lazy var capture = ObsidianCapture(activities: activities)
+    lazy var pomodoro = PomodoroManager(activities: activities)
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Accessory app: no Dock icon, lives in the menu bar / notch.
         NSApp.setActivationPolicy(.accessory)
         applyAppearance(UserSettings.shared.appearance)
 
-        let controller = NotchWindowController(viewModel: viewModel, nowPlaying: nowPlaying, shelf: shelf, activities: activities, capture: capture, spectrum: spectrum)
+        let controller = NotchWindowController(viewModel: viewModel, nowPlaying: nowPlaying, shelf: shelf, activities: activities, pomodoro: pomodoro, capture: capture, spectrum: spectrum)
         controller.show()
         windowController = controller
 
@@ -63,6 +64,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         systemHUD.stop()
         spectrum.stop()
         capture.stop()
+        // Session state is already persisted on every transition; just disarm
+        // the 1s tick. The wall-clock session resumes on the next launch.
+        pomodoro.suspendTicking()
     }
 
     // MARK: - Sleep/Wake
@@ -92,6 +96,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         activities.stop()
         systemHUD.stop()
         spectrum.stop()
+        pomodoro.suspendTicking()
         windowController?.suspendMonitors()
     }
 
@@ -99,15 +104,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         nowPlaying.start()
         activities.start()
         systemHUD.start(presenting: activities)
+        pomodoro.resumeTicking()
         windowController?.resumeMonitors()
     }
 
     @objc private func screensDidSleep() {
         nowPlaying.setScreensAwake(false)
+        pomodoro.setScreensAwake(false)
     }
 
     @objc private func screensDidWake() {
         nowPlaying.setScreensAwake(true)
+        pomodoro.setScreensAwake(true)
     }
 
     @objc private func screenParametersChanged() {
@@ -117,6 +125,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func resetData() {
         shelf.clear()
         nowPlaying.clearFavorites()
+        pomodoro.clear()
     }
 
     /// Register NotchMate as a login item so it starts automatically at every login.

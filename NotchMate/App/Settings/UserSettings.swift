@@ -132,6 +132,11 @@ final class UserSettings: ObservableObject {
         static let captureMode = "obsidianCaptureMode"
         static let captureTimestamp = "obsidianCaptureTimestamp"
         static let captureHotkeyEnabled = "obsidianCaptureHotkeyEnabled"
+        // Focus timers (pomodoro)
+        static let timerPresets = "timerPresets"
+        static let timerCountsUp = "timerCountsUp"
+        static let timerAutoChain = "timerAutoChain"
+        static let timerSoundEnabled = "timerSoundEnabled"
     }
 
     private let defaults: UserDefaults
@@ -202,6 +207,27 @@ final class UserSettings: ObservableObject {
         didSet { defaults.set(captureHotkeyEnabled, forKey: Key.captureHotkeyEnabled) }
     }
 
+    // MARK: Focus timers (pomodoro)
+
+    /// Ordered list of named timers; the list order is also the auto-chain
+    /// order (a completed timer starts the next one, wrapping around).
+    @Published var timerPresets: [TimerPreset] {
+        didSet { defaults.set(Self.encodePresets(timerPresets), forKey: Key.timerPresets) }
+    }
+    /// Count up (elapsed time) instead of down (remaining time). Display only —
+    /// the session still ends when the preset duration is reached.
+    @Published var timerCountsUp: Bool {
+        didSet { defaults.set(timerCountsUp, forKey: Key.timerCountsUp) }
+    }
+    /// Auto-start the next preset in list order when a timer completes.
+    @Published var timerAutoChain: Bool {
+        didSet { defaults.set(timerAutoChain, forKey: Key.timerAutoChain) }
+    }
+    /// Play a completion sound when a timer runs out.
+    @Published var timerSoundEnabled: Bool {
+        didSet { defaults.set(timerSoundEnabled, forKey: Key.timerSoundEnabled) }
+    }
+
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         defaults.register(defaults: [
@@ -213,6 +239,9 @@ final class UserSettings: ObservableObject {
             Key.captureHeading: "## 📥 Capture",
             Key.captureTimestamp: true,
             Key.captureHotkeyEnabled: false,
+            Key.timerCountsUp: false,
+            Key.timerAutoChain: false,
+            Key.timerSoundEnabled: true,
         ])
         self.mediaSource = MediaSource(rawValue: defaults.string(forKey: Key.mediaSource) ?? "") ?? .auto
         self.appearance = Appearance(rawValue: defaults.string(forKey: Key.appearance) ?? "") ?? .system
@@ -231,6 +260,10 @@ final class UserSettings: ObservableObject {
         self.captureMode = CaptureMode(rawValue: defaults.string(forKey: Key.captureMode) ?? "") ?? .silentAppend
         self.captureTimestamp = defaults.bool(forKey: Key.captureTimestamp)
         self.captureHotkeyEnabled = defaults.bool(forKey: Key.captureHotkeyEnabled)
+        self.timerPresets = Self.decodePresets(defaults.data(forKey: Key.timerPresets)) ?? TimerPreset.defaults
+        self.timerCountsUp = defaults.bool(forKey: Key.timerCountsUp)
+        self.timerAutoChain = defaults.bool(forKey: Key.timerAutoChain)
+        self.timerSoundEnabled = defaults.bool(forKey: Key.timerSoundEnabled)
     }
 
     private static func encodeColor(_ color: Color) -> Data? {
@@ -242,5 +275,14 @@ final class UserSettings: ObservableObject {
               let nsColor = try? NSKeyedUnarchiver.unarchivedObject(ofClass: NSColor.self, from: data)
         else { return nil }
         return Color(nsColor)
+    }
+
+    private static func encodePresets(_ presets: [TimerPreset]) -> Data? {
+        try? JSONEncoder().encode(presets)
+    }
+
+    private static func decodePresets(_ data: Data?) -> [TimerPreset]? {
+        guard let data else { return nil }
+        return try? JSONDecoder().decode([TimerPreset].self, from: data)
     }
 }

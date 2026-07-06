@@ -9,7 +9,10 @@ struct NotchActivity: Identifiable, Equatable {
         case battery
         case audioRoute
         case fileReceived
+        /// The generic HUD slot (volume/brightness) — not the focus timer.
         case timer
+        /// A named focus timer (pomodoro) ran out.
+        case pomodoroEnd
     }
 
     let id = UUID()

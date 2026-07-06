@@ -48,6 +48,12 @@ enum Persistence {
         }
     }
 
+    /// Delete a stored JSON file — used when its model empties out (e.g. the
+    /// pomodoro session store once the timer goes idle).
+    static func remove(_ filename: String) {
+        try? FileManager.default.removeItem(at: supportDirectory.appendingPathComponent(filename))
+    }
+
     // MARK: File bookmarks
 
     /// Bookmark a file URL so it can be resolved after relaunch even if moved.

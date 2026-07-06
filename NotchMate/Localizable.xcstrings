@@ -13,6 +13,12 @@
         "en" : { "stringUnit" : { "state" : "translated", "value" : "1 file added" } }
       }
     },
+    "activity.timerDone" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "„%@“ beendet" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "“%@” finished" } }
+      }
+    },
     "appearance.dark" : {
       "localizations" : {
         "de" : { "stringUnit" : { "state" : "translated", "value" : "Dunkel" } },
@@ -139,6 +145,48 @@
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Suppress Apple OSD (experimental)" } }
       }
     },
+    "settings.timer.add" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Timer hinzufügen" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Add timer" } }
+      }
+    },
+    "settings.timer.autoChain" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Automatisch mit nächstem Timer fortsetzen" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Automatically continue with the next timer" } }
+      }
+    },
+    "settings.timer.behavior" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Verhalten" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Behavior" } }
+      }
+    },
+    "settings.timer.chainHint" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Die Reihenfolge der Liste bestimmt die Kette beim automatischen Fortsetzen." } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "The list order defines the auto-continue chain." } }
+      }
+    },
+    "settings.timer.countUp" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Aufwärts zählen (verstrichene Zeit)" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Count up (elapsed time)" } }
+      }
+    },
+    "settings.timer.presets" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Voreinstellungen" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Presets" } }
+      }
+    },
+    "settings.timer.sound" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Ton bei Ablauf" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Sound when a timer ends" } }
+      }
+    },
     "shelf.dropHint" : {
       "localizations" : {
         "de" : { "stringUnit" : { "state" : "translated", "value" : "Dateien hierher ziehen" } },
@@ -191,6 +239,42 @@
       "localizations" : {
         "de" : { "stringUnit" : { "state" : "translated", "value" : "Musik" } },
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Music" } }
+      }
+    },
+    "tab.timer" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Timer" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Timer" } }
+      }
+    },
+    "timer.empty" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Keine Timer angelegt. Füge welche in den Einstellungen hinzu." } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "No timers yet. Add some in Settings." } }
+      }
+    },
+    "timer.preset.focus" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Fokus" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Focus" } }
+      }
+    },
+    "timer.preset.longBreak" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Lange Pause" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Long break" } }
+      }
+    },
+    "timer.preset.new" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Neuer Timer" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "New timer" } }
+      }
+    },
+    "timer.preset.shortBreak" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Kurze Pause" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Short break" } }
       }
     }
   },
