@@ -25,6 +25,15 @@ final class SpectrumAnalyzer: ObservableObject {
     private var running = false
     private var sampleRate: Double = 48_000
 
+    // Rebuilds the tap when the user switches output device (e.g. AirPods
+    // in/out): the aggregate can otherwise keep feeding silent samples forever.
+    private var deviceChangeListener: AudioObjectPropertyListenerBlock?
+    private var deviceChangeAddress = AudioObjectPropertyAddress(
+        mSelector: kAudioHardwarePropertyDefaultOutputDevice,
+        mScope: kAudioObjectPropertyScopeGlobal,
+        mElement: kAudioObjectPropertyElementMain
+    )
+
     // FFT scratch (all preallocated — nothing is allocated on the audio thread).
     private let fftSize = 1_024
     private let log2n: vDSP_Length
@@ -67,6 +76,7 @@ final class SpectrumAnalyzer: ObservableObject {
         // here: capturing `self` from deinit resurrects a deallocating object
         // and traps (that was the SIGABRT).
         teardown()
+        unregisterDeviceChangeListener()
         if let fftSetup { vDSP_destroy_fftsetup(fftSetup) }
     }
 
@@ -118,12 +128,14 @@ final class SpectrumAnalyzer: ObservableObject {
         guard AudioDeviceStart(aggregateID, proc) == noErr else { stop(); return }
 
         running = true
+        registerDeviceChangeListener()
         DispatchQueue.main.async { self.isLive = true }
     }
 
     func stop() {
         let wasRunning = aggregateID != 0 || tapID != 0
         teardown()
+        unregisterDeviceChangeListener()
         guard wasRunning else { return }
         // Reset published state on the main thread — weak so a pending block can
         // never resurrect a deallocating instance.
@@ -150,6 +162,33 @@ final class SpectrumAnalyzer: ObservableObject {
         }
         tapID = 0
         for i in smoothed.indices { smoothed[i] = 0 }
+    }
+
+    // MARK: - Device change handling
+
+    private func registerDeviceChangeListener() {
+        guard deviceChangeListener == nil else { return }
+        let block: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
+            self?.rebuildForDeviceChange()
+        }
+        deviceChangeListener = block
+        AudioObjectAddPropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &deviceChangeAddress, queue, block)
+    }
+
+    private func unregisterDeviceChangeListener() {
+        guard let block = deviceChangeListener else { return }
+        AudioObjectRemovePropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &deviceChangeAddress, queue, block)
+        deviceChangeListener = nil
+    }
+
+    /// The default output device changed (e.g. AirPods connected/disconnected).
+    /// The existing aggregate can silently keep feeding zero samples, so this
+    /// does a full teardown + rebuild of the tap and aggregate rather than just
+    /// restarting the IOProc.
+    private func rebuildForDeviceChange() {
+        guard running else { return }
+        teardown()
+        start()
     }
 
     // MARK: - Audio thread
