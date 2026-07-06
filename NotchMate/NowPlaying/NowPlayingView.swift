@@ -49,6 +49,18 @@ struct NowPlayingView: View {
                         .font(.system(size: 11))
                         .foregroundStyle(.white.opacity(0.55))
                         .lineLimit(1)
+                } else if nowPlaying.permissionDenied {
+                    Text(String(localized: "nowplaying.denied", defaultValue: "Kein Zugriff auf den Player"))
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.7))
+                        .lineLimit(1)
+                    Button(action: openAutomationSettings) {
+                        Text(String(localized: "nowplaying.denied.cta", defaultValue: "Automatisierung erlauben"))
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(Color.accentColor)
+                    }
+                    .buttonStyle(.plain)
+                    .pointingHandCursor(enabled: true)
                 } else {
                     Text(nowPlaying.isRunning
                          ? String(localized: "nowplaying.idle", defaultValue: "Nichts läuft")
@@ -77,10 +89,14 @@ struct NowPlayingView: View {
         Button(action: { nowPlaying.openCurrentTrack() }) {
             Group {
                 if let url = nowPlaying.track?.artworkURL {
-                    AsyncImage(url: url) { image in
-                        image.resizable().scaledToFill()
-                    } placeholder: {
-                        placeholderArtwork
+                    // Cross-fade to the new cover on track change instead of
+                    // popping through the grey placeholder.
+                    AsyncImage(url: url, transaction: Transaction(animation: .easeInOut(duration: 0.2))) { phase in
+                        if let image = phase.image {
+                            image.resizable().scaledToFill()
+                        } else {
+                            placeholderArtwork
+                        }
                     }
                 } else {
                     placeholderArtwork
@@ -97,6 +113,14 @@ struct NowPlayingView: View {
         .buttonStyle(.plain)
         .disabled(nowPlaying.track == nil)
         .pointingHandCursor(enabled: nowPlaying.track != nil)
+    }
+
+    /// Deep-link straight to System Settings → Privacy & Security → Automation
+    /// so the user can re-enable our Apple Events access.
+    private func openAutomationSettings() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation") {
+            NSWorkspace.shared.open(url)
+        }
     }
 
     private var placeholderArtwork: some View {
@@ -131,6 +155,12 @@ struct NowPlayingView: View {
                     Capsule()
                         .fill(Color.white.opacity(isScrubbing ? 1 : 0.9))
                         .frame(width: max(0, geo.size.width * displayedFraction))
+                        // Ease the fill between the 1s local position ticks and
+                        // over the discontinuous jump when the 5s hard refresh
+                        // corrects the interpolated position — otherwise the bar
+                        // steps and snaps. No easing while scrubbing, so the bar
+                        // tracks the finger instantly.
+                        .animation(isScrubbing ? nil : .linear(duration: 1), value: displayedFraction)
                 }
                 .frame(height: isScrubbing ? 5 : 3)
                 .frame(maxHeight: .infinity)   // enlarge the vertical hit area

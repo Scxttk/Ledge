@@ -176,7 +176,7 @@ private extension AnyTransition {
     static var iconHandover: AnyTransition {
         .asymmetric(
             insertion: .opacity.animation(.easeOut(duration: NotchLayout.pillHandoverFade)),
-            removal: .opacity.animation(.easeIn(duration: 0.12).delay(NotchLayout.pillHandoverFade))
+            removal: .opacity.animation(.easeIn(duration: NotchLayout.pillHandoverRemoveFade).delay(NotchLayout.pillHandoverFade))
         )
     }
 
@@ -285,7 +285,7 @@ private struct ExpandedView: View {
     private var showsPages: Bool { viewModel.islandState == .expanded }
 
     var body: some View {
-        VStack(spacing: showsPages ? 8 : 0) {
+        VStack(spacing: showsPages ? NotchLayout.expandedRowSpacing : 0) {
             // The tab bar occupies exactly the collapsed pill's band (flush top,
             // same height), so its icons sit on the same y as the pill's glyph —
             // the hero flight between them is purely horizontal, not diagonal.
@@ -328,7 +328,7 @@ private struct ExpandedView: View {
         // island edge so it clears the rounded corners; sliding pages must not
         // poke past the dark body onto the wallpaper.
         .padding(.horizontal, NotchLayout.expandedContentInset)
-        .padding(.bottom, showsPages ? 20 : 0)
+        .padding(.bottom, showsPages ? NotchLayout.expandedBottomPadding : 0)
         .foregroundStyle(.white)
     }
 
@@ -356,7 +356,7 @@ private struct NotchTabBar: View {
     let showsLabels: Bool
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: NotchLayout.tabBarSpacing) {
             tab(title: String(localized: "tab.music", defaultValue: "Musik"), icon: "music.note", value: .music)
             tab(title: String(localized: "tab.files", defaultValue: "Ablage"), icon: "tray.full", value: .files)
             tab(title: String(localized: "tab.capture", defaultValue: "Capture"), icon: "square.and.pencil", value: .capture)
@@ -401,9 +401,9 @@ private struct NotchTabBar: View {
                         .animation(NotchLayout.condenseFadeAnimation, value: showsLabels)
                 }
                 .font(.system(size: NotchLayout.bandFontSize, weight: .medium))
-                .padding(.vertical, 3)
-                .padding(.horizontal, 10)
-                .foregroundStyle(.white.opacity(isSelected ? 1 : 0.55))
+                .padding(.vertical, NotchLayout.tabItemPaddingVertical)
+                .padding(.horizontal, NotchLayout.tabItemPaddingHorizontal)
+                .foregroundStyle(.white.opacity(isSelected ? 1 : NotchLayout.tabInactiveOpacity))
             }
             .buttonStyle(.plain)
             .transition(.opacity.animation(NotchLayout.condenseFadeAnimation))
@@ -428,25 +428,34 @@ private struct CollapsedView: View {
     }
 
     var body: some View {
-        HStack(spacing: 6) {
+        // Spacings/paddings here must stay in lock-step with the width estimate
+        // in `NotchViewModel.collapsedWidth`, or the pill clips against the
+        // silhouette — so both sides read from the same `NotchLayout` constants.
+        HStack(spacing: NotchLayout.collapsedItemSpacing) {
             if nowPlaying.isPlaying, let url = nowPlaying.track?.artworkURL {
-                AsyncImage(url: url) { image in
-                    image.resizable().scaledToFill()
-                } placeholder: {
-                    Color.white.opacity(0.1)
+                // Fade the new cover in (transaction animation) over a placeholder
+                // tinted to the track's accent colour rather than flat grey, so a
+                // track change doesn't flash a grey square then pop during the
+                // hero crossfade.
+                AsyncImage(url: url, transaction: Transaction(animation: .easeInOut(duration: 0.2))) { phase in
+                    if let image = phase.image {
+                        image.resizable().scaledToFill()
+                    } else {
+                        nowPlaying.artworkColor ?? Color.white.opacity(0.1)
+                    }
                 }
                 .frame(width: NotchLayout.collapsedArtworkWidth, height: NotchLayout.collapsedArtworkWidth)
-                .clipShape(RoundedRectangle(cornerRadius: 3.5))
+                .clipShape(RoundedRectangle(cornerRadius: NotchLayout.collapsedArtworkCornerRadius))
                 WaveBarsView(
                     isActive: nowPlaying.screensAwake,
                     tint: nowPlaying.artworkColor,
                     bands: spectrum.isLive ? spectrum.bands : nil,
-                    count: 3,
-                    maxHeight: 12,
-                    barWidth: 2.5,
-                    spacing: 2
+                    count: NotchLayout.collapsedWaveBarCount,
+                    maxHeight: NotchLayout.collapsedWaveMaxHeight,
+                    barWidth: NotchLayout.collapsedWaveBarWidth,
+                    spacing: NotchLayout.collapsedWaveSpacing
                 )
-                .frame(width: 14, height: 14)
+                .frame(width: NotchLayout.collapsedWavesWidth, height: NotchLayout.collapsedWavesWidth)
             } else {
                 Image(systemName: idleIcon)
                     .font(.system(size: NotchLayout.bandFontSize, weight: .medium))
@@ -455,10 +464,10 @@ private struct CollapsedView: View {
             if !shelf.items.isEmpty {
                 Label("\(shelf.items.count)", systemImage: "tray.full.fill")
                     .labelStyle(.titleAndIcon)
-                    .font(.system(size: 9, weight: .semibold))
+                    .font(.system(size: NotchLayout.collapsedBadgeFontSize, weight: .semibold))
             }
         }
-        .padding(.horizontal, 10)
+        .padding(.horizontal, NotchLayout.collapsedContentPadding)
         // Pin the pill row to a fixed top band. Without this the row is
         // vertically centered in the *animated* island frame during the morph,
         // so the glyph starts mid-island and drifts up — the diagonal flight.

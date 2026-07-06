@@ -78,7 +78,10 @@ final class NotchWindowController {
             let bounds = container.bounds
             let width: CGFloat
             let height: CGFloat
-            if viewModel.isExpanded {
+            // Stay at the expanded footprint through the whole staged walk, not
+            // only at the terminal `.expanded` state — otherwise clicks fall
+            // through the still-visible large island while it collapses.
+            if viewModel.occupiesExpandedFootprint {
                 width = viewModel.expandedWidth
                 height = viewModel.expandedHeight
             } else {
@@ -244,8 +247,8 @@ final class NotchWindowController {
         let width: CGFloat
         let height: CGFloat
         if expanded {
-            width = viewModel.expandedWidth
-            height = viewModel.expandedHeight
+            width = viewModel.expandedWidth + NotchLayout.expandedHoverInset * 2
+            height = viewModel.expandedHeight + NotchLayout.expandedHoverInset
         } else {
             width = viewModel.collapsedWidth(isPlaying: nowPlaying.isPlaying, hasItems: !shelf.items.isEmpty) + NotchLayout.collapsedHoverInset * 2
             height = viewModel.collapsedHeight + NotchLayout.collapsedHoverInset
@@ -274,7 +277,11 @@ final class NotchWindowController {
         lastEvaluatedCursor = cursor
         followCursorScreenIfNeeded()
 
-        if viewModel.isExpanded {
+        // Key off the *visible* footprint, not the terminal `.expanded` state:
+        // through the whole staged collapse walk the island is still large, so
+        // it must stay catchable — a re-hover reverses the collapse, and the
+        // hover rect matches what the user sees rather than snapping to the pill.
+        if viewModel.occupiesExpandedFootprint {
             guard let rect = islandScreenRect(expanded: true) else { return }
             let inside = rect.contains(cursor)
             if debugHoverLogging {
@@ -282,9 +289,14 @@ final class NotchWindowController {
             }
             if inside {
                 collapseWorkItem?.cancel()
+                // Reverse an in-progress collapse walk (no-op once fully open).
+                // Respect the post-swipe suppression so a swipe-up close isn't
+                // instantly undone by a stationary cursor.
+                if !suppressHover { setExpanded(true) }
             } else if !shelf.isDropTargeted && !viewModel.isInteractionLocked {
                 // Cursor left the expanded footprint: collapse immediately. The
                 // hover monitor is deterministic, so no debounce delay is needed.
+                suppressHover = false
                 collapseWorkItem?.cancel()
                 setExpanded(false)
             } else if !shelf.isDropTargeted && viewModel.isInteractionLocked {
@@ -298,6 +310,10 @@ final class NotchWindowController {
                 if collapseWorkItem == nil {
                     let work = DispatchWorkItem { [weak self] in
                         guard let self else { return }
+                        // Clear the slot first: the `== nil` guard above is what
+                        // re-arms this grace timer, so a fired item must release
+                        // it or the grace never schedules again after the first.
+                        self.collapseWorkItem = nil
                         self.viewModel.isInteractionLocked = false
                         self.setExpanded(false)
                     }
@@ -355,6 +371,7 @@ final class NotchWindowController {
     private func scheduleCollapse() {
         collapseWorkItem?.cancel()
         let work = DispatchWorkItem { [weak self] in
+            self?.collapseWorkItem = nil
             self?.setExpanded(false)
         }
         collapseWorkItem = work

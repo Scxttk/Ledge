@@ -53,7 +53,8 @@ struct ObsidianVault {
     func appendCurrentBrowserPage(settings: UserSettings) throws -> URL {
         guard let page = Self.frontmostBrowserPage() else { throw CaptureError.noBrowserPage }
         let title = CaptureEscaping.sanitizeLinkTitle(page.title)
-        return try append(text: "[\(title)](\(page.url))", asLink: true, settings: settings)
+        let destination = CaptureEscaping.sanitizeLinkDestination(page.url)
+        return try append(text: "[\(title)](\(destination))", asLink: true, settings: settings)
     }
 
     // MARK: - Pure insertion logic (unit-tested)

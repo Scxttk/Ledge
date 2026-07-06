@@ -38,6 +38,15 @@ enum CaptureEscaping {
             .replacingOccurrences(of: "]", with: ")")
     }
 
+    /// Wrap a URL for use as the destination in `[title](url)` markdown. Angle
+    /// brackets let Obsidian/CommonMark keep spaces and `)` inside the URL
+    /// instead of terminating the link early; any literal `>` is stripped so it
+    /// can't close the wrapper.
+    static func sanitizeLinkDestination(_ url: String) -> String {
+        let cleaned = sanitizeLine(url).replacingOccurrences(of: ">", with: "")
+        return "<\(cleaned)>"
+    }
+
     /// True only if `target` resolves to a location inside `root` — blocks
     /// `../` traversal so capture can never write outside the chosen vault.
     static func isInside(_ target: URL, root: URL) -> Bool {

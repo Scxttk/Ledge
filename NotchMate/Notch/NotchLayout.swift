@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Central source of truth for the island's geometry, animation and timing
 /// constants. Previously these were scattered as magic numbers across
-/// `NotchViewModel`, `NotchWindowController`, `NotchShape` and the views.
+/// `NotchViewModel`, `NotchWindowController`, `IslandShape` and the views.
 /// Keeping them in one place makes the island tunable and is the foundation
 /// for user-configurable appearance.
 enum NotchLayout {
@@ -33,6 +33,15 @@ enum NotchLayout {
     static let collapsedArtworkWidth: CGFloat = 14
     /// The little frequency (wave-bars) visualizer next to the artwork.
     static let collapsedWavesWidth: CGFloat = 14
+    /// Corner radius of the collapsed pill's artwork thumbnail.
+    static let collapsedArtworkCornerRadius: CGFloat = 3.5
+    /// Wave-bars geometry inside the collapsed pill (3 slim bars).
+    static let collapsedWaveBarCount: Int = 3
+    static let collapsedWaveMaxHeight: CGFloat = 12
+    static let collapsedWaveBarWidth: CGFloat = 2.5
+    static let collapsedWaveSpacing: CGFloat = 2
+    /// Font size of the shelf badge's item count in the collapsed pill.
+    static let collapsedBadgeFontSize: CGFloat = 9
     /// The shelf badge (tray icon + item count, up to ~2 digits).
     static let collapsedBadgeWidth: CGFloat = 30
     /// Spacing between the collapsed HStack items.
@@ -63,18 +72,29 @@ enum NotchLayout {
     /// HStack spacing between a tab's icon and its label — also the amount the
     /// solo tab is shifted by to re-centre the icon.
     static let tabIconLabelSpacing: CGFloat = 4
+    /// Spacing between tab groups in the expanded tab bar.
+    static let tabBarSpacing: CGFloat = 6
+    /// Padding inside each tab button (around icon + label).
+    static let tabItemPaddingVertical: CGFloat = 3
+    static let tabItemPaddingHorizontal: CGFloat = 10
+    /// Foreground opacity of an unselected tab (selected is fully opaque).
+    static let tabInactiveOpacity: Double = 0.55
+    /// Vertical spacing between the tab bar and the page carousel when expanded.
+    static let expandedRowSpacing: CGFloat = 8
+    /// Bottom padding below the page carousel when expanded.
+    static let expandedBottomPadding: CGFloat = 20
 
     /// How long the island rests in each transient stage before advancing —
     /// long enough to read the intermediate shape, short enough that the whole
     /// morph still feels like one continuous gesture. Collapse and expand walk
     /// the same stages in opposite directions; expand rests are a bit shorter
     /// so opening stays responsive on hover.
-    static let bandCollapseDelay: TimeInterval = 0.55  // .band → .solo
-    static let soloCollapseDelay: TimeInterval = 0.5   // .solo → .condensing
+    static let bandCollapseDelay: TimeInterval = 0.35  // .band → .solo
+    static let soloCollapseDelay: TimeInterval = 0.3   // .solo → .condensing
     /// How long the condensing stage (label fades, icon centres, capsule
     /// narrows to pill width) runs before the pill content swaps in — roughly
     /// the collapse spring's settling time, so the swap lands on a still image.
-    static let condenseSwapDelay: TimeInterval = 0.42
+    static let condenseSwapDelay: TimeInterval = 0.34
     static let condenseExpandDelay: TimeInterval = 0.1   // .condensing → .solo
     static let soloExpandDelay: TimeInterval = 0.12      // .solo → .band
     static let bandExpandDelay: TimeInterval = 0.14      // .band → .expanded
@@ -90,6 +110,9 @@ enum NotchLayout {
     /// fully in (see `iconHandover`). Holding one layer opaque the whole time is
     /// what kills the crossfade brightness dip — the "flicker".
     static let pillHandoverFade: TimeInterval = 0.18
+    /// Duration of the departing layer's cut once the newcomer is fully in (the
+    /// removal side of `iconHandover`), after the `pillHandoverFade` delay.
+    static let pillHandoverRemoveFade: TimeInterval = 0.12
 
     /// When music plays, the collapse hands the tab bar off to the now-playing
     /// pill hero (cover + spectrum) at the `.solo` stage. Those two are *different*
@@ -145,6 +168,12 @@ enum NotchLayout {
     /// Extra tolerance around the visible collapsed pill before hover counts
     /// as "on the notch". Kept tiny so it only triggers over the pill.
     static let collapsedHoverInset: CGFloat = 4
+    /// Outward tolerance around the *expanded* island before a cursor counts as
+    /// having left it. Gives the collapse boundary a little hysteresis so a
+    /// graze along the exact visible edge doesn't commit the slow collapse
+    /// walk — "open" was already padded (`collapsedHoverInset`), this pads
+    /// "stay open" to match.
+    static let expandedHoverInset: CGFloat = 6
     /// Bleed the hover rect above the physical top edge: the cursor's y at the
     /// very top equals `screen.frame.maxY`, and `NSRect.contains` treats the top
     /// edge as exclusive (`y < maxY`). Without this the notch refuses to open at

@@ -12,6 +12,9 @@ final class NowPlayingManager: ObservableObject {
     @Published private(set) var track: NowPlayingTrack?
     @Published private(set) var position: TimeInterval = 0
     @Published private(set) var isShuffling = false
+    /// A queried player is running but macOS is blocking our Apple Events, and
+    /// there's nothing to show. Drives the "grant Automation access" prompt.
+    @Published private(set) var permissionDenied = false
     @Published private(set) var activeSourceID: UserSettings.MediaSource = .spotify
 
     /// Accent colour derived from the current cover, tinting the wave visualizer.
@@ -171,6 +174,9 @@ final class NowPlayingManager: ObservableObject {
         track = s.track
         position = s.position
         isShuffling = s.isShuffling
+        // Only prompt when we have nothing to show anyway: any queried source
+        // being blocked, with no track surfaced, means the denial is the reason.
+        permissionDenied = s.track == nil && sourcesToQuery().contains { $0.state.permissionDenied }
         refreshArtworkColor(for: s.track?.artworkURL)
     }
 
@@ -207,7 +213,12 @@ final class NowPlayingManager: ObservableObject {
     /// Open the current song in its app: the deep link when we have one
     /// (Spotify), otherwise just bring the player to the front (Apple Music).
     func openCurrentTrack() {
-        if let url = track?.url {
+        // Only follow the player's deep link for schemes we expect; anything
+        // else falls back to bringing the app forward rather than handing an
+        // arbitrary URL to the system opener.
+        let allowedSchemes: Set<String> = ["spotify", "https", "http"]
+        if let url = track?.url, let scheme = url.scheme?.lowercased(),
+           allowedSchemes.contains(scheme) {
             NSWorkspace.shared.open(url)
         } else {
             active.activate()

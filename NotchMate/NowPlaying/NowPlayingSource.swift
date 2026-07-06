@@ -7,6 +7,10 @@ struct NowPlayingState: Equatable {
     var track: NowPlayingTrack?
     var position: TimeInterval = 0
     var isShuffling = false
+    /// The player is running but macOS denied us Automation (Apple Events)
+    /// access, so we can't read its state. Distinct from "not running" so the
+    /// UI can prompt for a re-grant instead of silently showing "no player".
+    var permissionDenied = false
 }
 
 /// A controllable media source (a scriptable player app). The manager polls
@@ -79,9 +83,12 @@ class ScriptableMediaSource: NowPlayingSource {
             switch self.runScript(self.readScript) {
             case .success(let output):
                 newState = self.parse(output)
-            case .failure:
-                // Treat a scripting error as "not running" rather than desyncing.
-                newState = NowPlayingState()
+            case .failure(let error):
+                // errAEEventNotPermitted (-1743): the player is up but macOS
+                // blocked our Apple Events. Surface it distinctly so the UI can
+                // prompt; any other scripting error degrades to "not running".
+                let denied = (error as NSError).code == -1743
+                newState = NowPlayingState(permissionDenied: denied)
             }
             DispatchQueue.main.async {
                 self.state = newState
@@ -133,7 +140,10 @@ class ScriptableMediaSource: NowPlayingSource {
         let descriptor = script.executeAndReturnError(&error)
         if let error {
             NSLog("NotchMate: \(appName) AppleScript error: \(error)")
-            return .failure(NSError(domain: "NotchMate", code: -2))
+            // Preserve the AppleScript error number (e.g. -1743 = not permitted)
+            // as the NSError code so callers can react to permission denials.
+            let number = (error["NSAppleScriptErrorNumber"] as? Int) ?? -2
+            return .failure(NSError(domain: "NotchMate", code: number))
         }
         return .success(descriptor.stringValue ?? "")
     }
