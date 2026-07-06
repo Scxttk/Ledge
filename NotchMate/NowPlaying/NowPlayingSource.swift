@@ -44,14 +44,18 @@ class ScriptableMediaSource: NowPlayingSource {
 
     /// Spotify reports duration in milliseconds, Apple Music in seconds.
     private let durationDivisor: Double
-    private let queue: DispatchQueue
+    /// Shared across all sources: the OSA/AppleScript component is not safe to
+    /// enter concurrently from multiple threads (two scripts compiling at once
+    /// can crash inside the shared Apple Event component), so every source
+    /// must serialize onto the same queue rather than its own.
+    private static let queue = DispatchQueue(label: "com.scott.notchmate.applescript")
+    private var queue: DispatchQueue { Self.queue }
 
     init(id: UserSettings.MediaSource, appName: String, durationDivisor: Double, changeNotification: Notification.Name?) {
         self.id = id
         self.appName = appName
         self.durationDivisor = durationDivisor
         self.changeNotification = changeNotification
-        self.queue = DispatchQueue(label: "com.scott.notchmate.source.\(appName)")
     }
 
     // MARK: Transport

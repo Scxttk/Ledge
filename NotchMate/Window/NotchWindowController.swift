@@ -21,6 +21,11 @@ final class NotchWindowController {
     private var scrollMonitorGlobal: Any?
     private var hoverMonitorGlobal: Any?
     private var hoverMonitorLocal: Any?
+    private let menuBarOverlapMonitor = MenuBarOverlapMonitor()
+    /// True while the frontmost app's menu bar overlaps the notch pill — the
+    /// panel is hidden and non-interactive for the duration (see
+    /// `setMenuBarOverlap`).
+    private var menuBarOverlapActive = false
 
     /// Logs the live hover evaluation to a plain file when set (debugging only).
     /// A file is used instead of NSLog because modern macOS redacts dynamic
@@ -113,6 +118,10 @@ final class NotchWindowController {
 
         installScrollMonitor()
         installHoverMonitor()
+
+        menuBarOverlapMonitor.notchLeftEdgeProvider = { [weak self] in self?.islandScreenRect(expanded: false)?.minX }
+        menuBarOverlapMonitor.onChange = { [weak self] overlapping in self?.setMenuBarOverlap(overlapping) }
+        menuBarOverlapMonitor.start()
     }
 
     deinit {
@@ -128,6 +137,7 @@ final class NotchWindowController {
         if let hoverMonitorLocal {
             NSEvent.removeMonitor(hoverMonitorLocal)
         }
+        menuBarOverlapMonitor.stop()
     }
 
     func show() {
@@ -156,6 +166,7 @@ final class NotchWindowController {
             NSEvent.removeMonitor(hoverMonitorLocal)
             self.hoverMonitorLocal = nil
         }
+        menuBarOverlapMonitor.stop()
         collapseWorkItem?.cancel()
         // Don't strand the island mid-walk over a sleep: finish the remaining
         // stages immediately (no animation — the screen is going dark anyway).
@@ -176,6 +187,7 @@ final class NotchWindowController {
         guard scrollMonitor == nil, scrollMonitorGlobal == nil, hoverMonitorGlobal == nil, hoverMonitorLocal == nil else { return }
         installScrollMonitor()
         installHoverMonitor()
+        menuBarOverlapMonitor.start()
         reposition()
     }
 
@@ -269,7 +281,28 @@ final class NotchWindowController {
         )
     }
 
+    /// Hide (and stop hit-testing) the panel while the frontmost app's menu
+    /// bar overlaps the notch pill, and restore it once the overlap clears.
+    /// An already-open island is forced closed first so it doesn't obscure
+    /// the menu bar it just started overlapping.
+    private func setMenuBarOverlap(_ active: Bool) {
+        guard menuBarOverlapActive != active else { return }
+        menuBarOverlapActive = active
+        if active {
+            stageWorkItem?.cancel(); stageWorkItem = nil
+            stagingTarget = nil
+            collapseWorkItem?.cancel()
+            viewModel.islandState = .collapsed
+            panel.alphaValue = 0
+            panel.ignoresMouseEvents = true
+        } else {
+            panel.alphaValue = 1
+            panel.ignoresMouseEvents = false
+        }
+    }
+
     private func evaluateHover() {
+        guard !menuBarOverlapActive else { return }
         let cursor = NSEvent.mouseLocation
         if let last = lastEvaluatedCursor, abs(last.x - cursor.x) < 1, abs(last.y - cursor.y) < 1 {
             return
@@ -277,11 +310,14 @@ final class NotchWindowController {
         lastEvaluatedCursor = cursor
         followCursorScreenIfNeeded()
 
-        // Key off the *visible* footprint, not the terminal `.expanded` state:
-        // through the whole staged collapse walk the island is still large, so
-        // it must stay catchable — a re-hover reverses the collapse, and the
-        // hover rect matches what the user sees rather than snapping to the pill.
-        if viewModel.occupiesExpandedFootprint {
+        // Only the resting `.expanded` state gets the big hover rect. Every
+        // other state — including `.band`/`.solo`, which still render fairly
+        // wide — is treated as the small pill for hover purposes, on request:
+        // a cursor sitting in the leftover space of a collapsing notch should
+        // not reopen it; only actually hovering the (shrinking) pill itself
+        // should. The staged collapse/expand walk itself is untouched — it
+        // still runs its own animation regardless of this hit-test rect.
+        if viewModel.isExpanded {
             guard let rect = islandScreenRect(expanded: true) else { return }
             let inside = rect.contains(cursor)
             if debugHoverLogging {
@@ -294,9 +330,9 @@ final class NotchWindowController {
                 // instantly undone by a stationary cursor.
                 if !suppressHover { setExpanded(true) }
             } else if !shelf.isDropTargeted && !viewModel.isInteractionLocked {
-                // Cursor left the expanded footprint: collapse immediately. The
-                // hover monitor is deterministic, so no debounce delay is needed.
-                suppressHover = false
+                // Cursor left the fully-expanded footprint: collapse
+                // immediately. The hover monitor is deterministic, so no
+                // debounce delay is needed.
                 collapseWorkItem?.cancel()
                 setExpanded(false)
             } else if !shelf.isDropTargeted && viewModel.isInteractionLocked {
@@ -342,6 +378,7 @@ final class NotchWindowController {
     // MARK: - File drag
 
     private func handleDragEntered() {
+        guard !menuBarOverlapActive else { return }
         collapseWorkItem?.cancel()
         suppressHover = false
         viewModel.selectedTab = .files
@@ -441,7 +478,7 @@ final class NotchWindowController {
     /// expanded-notch footprint (the "big notch" boundary), where the local monitor
     /// can't see the event because hit-testing lets it fall through.
     private func handleBigNotchRegionScroll(_ event: NSEvent) {
-        guard !viewModel.isExpanded else { return }
+        guard !menuBarOverlapActive, !viewModel.isExpanded else { return }
         let dy = event.scrollingDeltaY
         guard dy > 0, abs(dy) > NotchLayout.gestureScrollThreshold, abs(dy) > abs(event.scrollingDeltaX) else { return }
         guard let rect = islandScreenRect(expanded: true), rect.contains(NSEvent.mouseLocation) else { return }

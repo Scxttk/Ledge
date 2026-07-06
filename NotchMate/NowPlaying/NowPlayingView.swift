@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct NowPlayingView: View {
@@ -297,14 +298,53 @@ struct WaveBarsView: View {
     var barWidth: CGFloat = 3
     var spacing: CGFloat = 3
 
-    private var gradientColors: [Color] {
-        if let tint { return [tint, tint.opacity(0.55)] }
-        return [.cyan, .blue]
+    @ObservedObject private var settings = UserSettings.shared
+
+    /// Per-bar fill, top-to-bottom gradient as before, but the *base* colour
+    /// now depends on the chosen spectrum style: same for every bar (`.solid`,
+    /// unchanged behaviour), alternating between the two accent colours, or
+    /// interpolated across the bar's position for a continuous left-to-right
+    /// gradient look.
+    /// The two accents used by `.alternating`/`.gradient`. `.cover` derives them
+    /// from the current track's accent (same source the `.solid` tint uses) so
+    /// the spectrum keeps matching whatever is playing; `.manual` uses the
+    /// fixed pair chosen in Settings.
+    private var accentPair: (Color, Color) {
+        switch settings.spectrumColorSource {
+        case .manual:
+            return (settings.spectrumColorA, settings.spectrumColorB)
+        case .cover:
+            return Color.huePair(from: tint ?? .cyan)
+        }
     }
 
-    private func bar(_ height: CGFloat) -> some View {
+    private func gradientColors(forBarAt index: Int, total: Int) -> [Color] {
+        switch settings.spectrumStyle {
+        case .solid:
+            if let tint { return [tint, tint.opacity(0.55)] }
+            return [.cyan, .blue]
+        case .shades:
+            // Same hue as the cover accent throughout (clean, single-colour
+            // look like the iOS Dynamic Island), but each bar's brightness
+            // steps up left-to-right so it doesn't read as flat/boring.
+            let t = total > 1 ? Double(index) / Double(total - 1) : 0
+            let base = Color.shaded(tint ?? .cyan, t: t)
+            return [base, base.opacity(0.55)]
+        case .alternating:
+            let (colorA, colorB) = accentPair
+            let base = index % 2 == 0 ? colorA : colorB
+            return [base, base.opacity(0.55)]
+        case .gradient:
+            let (colorA, colorB) = accentPair
+            let t = total > 1 ? Double(index) / Double(total - 1) : 0
+            let base = Color.mix(colorA, colorB, t: t)
+            return [base, base.opacity(0.55)]
+        }
+    }
+
+    private func bar(_ height: CGFloat, index: Int, total: Int) -> some View {
         Capsule()
-            .fill(LinearGradient(colors: gradientColors, startPoint: .top, endPoint: .bottom))
+            .fill(LinearGradient(colors: gradientColors(forBarAt: index, total: total), startPoint: .top, endPoint: .bottom))
             .frame(width: barWidth, height: height)
     }
 
@@ -330,7 +370,7 @@ struct WaveBarsView: View {
             let values = fitted(bands)
             HStack(alignment: .center, spacing: spacing) {
                 ForEach(values.indices, id: \.self) { i in
-                    bar(max(floorHeight, maxHeight * values[i]))
+                    bar(max(floorHeight, maxHeight * values[i]), index: i, total: values.count)
                 }
             }
             .frame(maxHeight: .infinity, alignment: .center)
@@ -341,7 +381,7 @@ struct WaveBarsView: View {
                 let time = timeline.date.timeIntervalSinceReferenceDate
                 HStack(alignment: .center, spacing: spacing) {
                     ForEach(0..<count, id: \.self) { index in
-                        bar(proceduralHeight(index: index, time: time))
+                        bar(proceduralHeight(index: index, time: time), index: index, total: count)
                     }
                 }
                 .frame(maxHeight: .infinity, alignment: .center)
@@ -355,5 +395,41 @@ struct WaveBarsView: View {
         let phase = Double(index) * 0.7
         let value = 0.35 + 0.65 * abs(sin(time * 4 + phase))
         return maxHeight * CGFloat(value)
+    }
+}
+
+private extension Color {
+    /// Linear RGB interpolation between two colours, `t` clamped to 0...1.
+    static func mix(_ a: Color, _ b: Color, t: Double) -> Color {
+        let ca = NSColor(a).usingColorSpace(.deviceRGB) ?? NSColor(a)
+        let cb = NSColor(b).usingColorSpace(.deviceRGB) ?? NSColor(b)
+        let fraction = CGFloat(max(0, min(1, t)))
+        let r = ca.redComponent + (cb.redComponent - ca.redComponent) * fraction
+        let g = ca.greenComponent + (cb.greenComponent - ca.greenComponent) * fraction
+        let blue = ca.blueComponent + (cb.blueComponent - ca.blueComponent) * fraction
+        return Color(red: r, green: g, blue: blue)
+    }
+
+    /// A two-tone pair derived from a single base colour: same saturation and
+    /// brightness, hue shifted by ~130° so the pair reads as a deliberate
+    /// two-tone rather than a harsh full complementary clash.
+    static func huePair(from color: Color) -> (Color, Color) {
+        let ns = NSColor(color).usingColorSpace(.deviceRGB) ?? NSColor(color)
+        var h: CGFloat = 0, s: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        ns.getHue(&h, saturation: &s, brightness: &b, alpha: &a)
+        let shifted = Color(hue: (h + 0.36).truncatingRemainder(dividingBy: 1), saturation: s, brightness: b)
+        return (color, shifted)
+    }
+
+    /// Same hue/saturation as `color`, brightness scaled by position `t`
+    /// (0...1) so a row of bars reads as one colour deepening/lightening
+    /// across the group rather than a flat wash.
+    static func shaded(_ color: Color, t: Double) -> Color {
+        let ns = NSColor(color).usingColorSpace(.deviceRGB) ?? NSColor(color)
+        var h: CGFloat = 0, s: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        ns.getHue(&h, saturation: &s, brightness: &b, alpha: &a)
+        let factor = 0.65 + 0.5 * CGFloat(max(0, min(1, t)))
+        let brightness = min(1, max(0.2, b * factor))
+        return Color(hue: h, saturation: s, brightness: brightness)
     }
 }

@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 extension Notification.Name {
@@ -43,6 +44,57 @@ final class UserSettings: ObservableObject {
         }
     }
 
+    /// Visual style for the now-playing spectrum bars (`WaveBarsView`).
+    /// `.solid` keeps every bar tinted the same (cover accent or the cyan/blue
+    /// fallback); `.alternating` and `.gradient` bring in a second accent
+    /// colour, sourced per `spectrumColorSource`.
+    enum SpectrumStyle: String, CaseIterable, Identifiable {
+        case solid
+        case shades
+        case alternating
+        case gradient
+
+        var id: String { rawValue }
+
+        var localizedName: String {
+            switch self {
+            case .solid: return String(localized: "spectrum.style.solid", defaultValue: "Einfarbig")
+            case .shades: return String(localized: "spectrum.style.shades", defaultValue: "Schattierungen")
+            case .alternating: return String(localized: "spectrum.style.alternating", defaultValue: "Alternierend")
+            case .gradient: return String(localized: "spectrum.style.gradient", defaultValue: "Verlauf")
+            }
+        }
+
+        /// Whether this style consults the second accent colour at all.
+        /// `.solid`/`.shades` are always single-hue from the cover, so the
+        /// colour-source and accent pickers are irrelevant for them.
+        var usesAccentPair: Bool {
+            switch self {
+            case .solid, .shades: return false
+            case .alternating, .gradient: return true
+            }
+        }
+    }
+
+    /// Where the two accent colours for `.alternating`/`.gradient` come from.
+    /// `.cover` derives them from the current track's artwork (same accent the
+    /// solid style already uses, plus a hue-shifted twin) so the spectrum keeps
+    /// matching whatever is playing. `.manual` uses the two fixed colours the
+    /// user picked in Settings.
+    enum SpectrumColorSource: String, CaseIterable, Identifiable {
+        case cover
+        case manual
+
+        var id: String { rawValue }
+
+        var localizedName: String {
+            switch self {
+            case .cover: return String(localized: "spectrum.colorSource.cover", defaultValue: "Vom Cover")
+            case .manual: return String(localized: "spectrum.colorSource.manual", defaultValue: "Manuell")
+            }
+        }
+    }
+
     /// How Quick Capture writes into the vault. `.silentAppend` is the default —
     /// it appends directly to the daily note's file without stealing focus.
     /// `.openInObsidian` does the same silent append, then reveals the note in
@@ -67,6 +119,10 @@ final class UserSettings: ObservableObject {
         static let liveActivitiesEnabled = "liveActivitiesEnabled"
         static let hudEnabled = "hudEnabled"
         static let suppressSystemOSD = "suppressSystemOSD"
+        static let spectrumStyle = "spectrumStyle"
+        static let spectrumColorSource = "spectrumColorSource"
+        static let spectrumColorA = "spectrumColorA"
+        static let spectrumColorB = "spectrumColorB"
         // Obsidian Quick Capture
         static let vaultBookmark = "obsidianVaultBookmark"
         static let vaultName = "obsidianVaultName"
@@ -98,6 +154,18 @@ final class UserSettings: ObservableObject {
     /// when available. Requires Accessibility; without it the notch HUD is additive.
     @Published var suppressSystemOSD: Bool {
         didSet { defaults.set(suppressSystemOSD, forKey: Key.suppressSystemOSD) }
+    }
+    @Published var spectrumStyle: SpectrumStyle {
+        didSet { defaults.set(spectrumStyle.rawValue, forKey: Key.spectrumStyle) }
+    }
+    @Published var spectrumColorSource: SpectrumColorSource {
+        didSet { defaults.set(spectrumColorSource.rawValue, forKey: Key.spectrumColorSource) }
+    }
+    @Published var spectrumColorA: Color {
+        didSet { defaults.set(Self.encodeColor(spectrumColorA), forKey: Key.spectrumColorA) }
+    }
+    @Published var spectrumColorB: Color {
+        didSet { defaults.set(Self.encodeColor(spectrumColorB), forKey: Key.spectrumColorB) }
     }
 
     // MARK: Obsidian Quick Capture
@@ -151,6 +219,10 @@ final class UserSettings: ObservableObject {
         self.liveActivitiesEnabled = defaults.bool(forKey: Key.liveActivitiesEnabled)
         self.hudEnabled = defaults.bool(forKey: Key.hudEnabled)
         self.suppressSystemOSD = defaults.bool(forKey: Key.suppressSystemOSD)
+        self.spectrumStyle = SpectrumStyle(rawValue: defaults.string(forKey: Key.spectrumStyle) ?? "") ?? .solid
+        self.spectrumColorSource = SpectrumColorSource(rawValue: defaults.string(forKey: Key.spectrumColorSource) ?? "") ?? .cover
+        self.spectrumColorA = Self.decodeColor(defaults.data(forKey: Key.spectrumColorA)) ?? .cyan
+        self.spectrumColorB = Self.decodeColor(defaults.data(forKey: Key.spectrumColorB)) ?? .purple
         self.vaultBookmark = defaults.data(forKey: Key.vaultBookmark)
         self.vaultName = defaults.string(forKey: Key.vaultName) ?? ""
         self.dailyFolder = defaults.string(forKey: Key.dailyFolder) ?? "01-daily"
@@ -159,5 +231,16 @@ final class UserSettings: ObservableObject {
         self.captureMode = CaptureMode(rawValue: defaults.string(forKey: Key.captureMode) ?? "") ?? .silentAppend
         self.captureTimestamp = defaults.bool(forKey: Key.captureTimestamp)
         self.captureHotkeyEnabled = defaults.bool(forKey: Key.captureHotkeyEnabled)
+    }
+
+    private static func encodeColor(_ color: Color) -> Data? {
+        try? NSKeyedArchiver.archivedData(withRootObject: NSColor(color), requiringSecureCoding: true)
+    }
+
+    private static func decodeColor(_ data: Data?) -> Color? {
+        guard let data,
+              let nsColor = try? NSKeyedUnarchiver.unarchivedObject(ofClass: NSColor.self, from: data)
+        else { return nil }
+        return Color(nsColor)
     }
 }

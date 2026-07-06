@@ -3,9 +3,23 @@ import CoreImage
 import SwiftUI
 
 /// Derives a single vibrant accent colour from album artwork — used to tint the
-/// now-playing wave visualizer so it matches the cover. Downscales via
-/// `CIAreaAverage` (cheap, one 1×1 render) and then pushes saturation/brightness
-/// up, since a raw average of a busy cover is usually a muddy grey.
+/// now-playing wave visualizer so it matches the cover.
+///
+/// A plain pixel average (`CIAreaAverage`) blends *all* regions of the cover
+/// into one value, which reads as a muddy brown/olive whenever the artwork has
+/// two or more distinct saturated regions (say, a red logo on a green
+/// background) — averaging red and green lands roughly on brown/yellow, which
+/// looks like neither. Instead this buckets pixels by hue and picks whichever
+/// saturated hue actually dominates the cover, so a mostly-red-and-green image
+/// comes out red or green (whichever has more weight) rather than their
+/// blended midpoint.
+///
+/// A tiny splash of colour (a hand, a logo, a sliver of coloured spine on an
+/// otherwise black-and-white cover) is deliberately *not* enough to win: the
+/// winning hue bucket must account for a real share of the whole image
+/// (`minimumDominantShare`). When nothing clears that bar — a genuinely
+/// grayscale/monochrome cover — this returns white rather than an unrelated
+/// default colour, since white is the neutral "no real colour here" answer.
 enum ArtworkColor {
     private static let context = CIContext(options: [.workingColorSpace: NSNull()])
     private static var cache: [URL: Color] = [:]
@@ -18,7 +32,7 @@ enum ArtworkColor {
             return
         }
         DispatchQueue.global(qos: .utility).async {
-            let color = data(for: url).flatMap(average(of:)).map(vibrant(_:))
+            let color = data(for: url).flatMap(dominantColor(from:))
             DispatchQueue.main.async {
                 if let color { cache[url] = color }
                 completion(color)
@@ -31,22 +45,82 @@ enum ArtworkColor {
         return try? Data(contentsOf: url)   // artwork URLs are small remote JPEGs
     }
 
-    /// Average colour of the image as RGB in 0...1.
-    private static func average(of data: Data) -> (r: CGFloat, g: CGFloat, b: CGFloat)? {
+    /// A winning hue bucket must contain at least this fraction of all sampled
+    /// pixels to count as "dominant" — otherwise it's just a small coloured
+    /// detail on an essentially monochrome cover, not a real accent.
+    private static let minimumDominantShare: Double = 0.10
+
+    /// Downscales to a small grid, buckets pixels by hue (skipping washed-out
+    /// near-gray/near-black/near-white ones, which carry no real colour
+    /// information), and picks the bucket with the most saturation-weighted
+    /// mass — i.e. the hue that actually dominates the artwork. Falls back to
+    /// white if no bucket reaches `minimumDominantShare` of the image, and to
+    /// nil (caller decides its own default) only when the image couldn't be
+    /// read/decoded at all.
+    private static func dominantColor(from data: Data) -> Color? {
         guard let image = CIImage(data: data) else { return nil }
         let extent = image.extent
         guard extent.width > 0, extent.height > 0 else { return nil }
-        guard let filter = CIFilter(name: "CIAreaAverage", parameters: [
-            kCIInputImageKey: image,
-            kCIInputExtentKey: CIVector(cgRect: extent)
-        ]), let output = filter.outputImage else { return nil }
 
-        var bitmap = [UInt8](repeating: 0, count: 4)
+        let side: CGFloat = 32
+        let scale = side / max(extent.width, extent.height)
+        guard let scaleFilter = CIFilter(name: "CILanczosScaleTransform", parameters: [
+            kCIInputImageKey: image,
+            kCIInputScaleKey: scale,
+            kCIInputAspectRatioKey: 1.0,
+        ]), let scaled = scaleFilter.outputImage else { return nil }
+
+        let width = Int(scaled.extent.width.rounded(.down))
+        let height = Int(scaled.extent.height.rounded(.down))
+        guard width > 0, height > 0 else { return nil }
+
+        var bitmap = [UInt8](repeating: 0, count: width * height * 4)
         context.render(
-            output, toBitmap: &bitmap, rowBytes: 4, bounds: CGRect(x: 0, y: 0, width: 1, height: 1),
+            scaled, toBitmap: &bitmap, rowBytes: width * 4,
+            bounds: CGRect(x: 0, y: 0, width: width, height: height),
             format: .RGBA8, colorSpace: CGColorSpaceCreateDeviceRGB()
         )
-        return (CGFloat(bitmap[0]) / 255, CGFloat(bitmap[1]) / 255, CGFloat(bitmap[2]) / 255)
+
+        let bucketCount = 24
+        var bucketWeight = [CGFloat](repeating: 0, count: bucketCount)
+        var bucketR = [CGFloat](repeating: 0, count: bucketCount)
+        var bucketG = [CGFloat](repeating: 0, count: bucketCount)
+        var bucketB = [CGFloat](repeating: 0, count: bucketCount)
+        var bucketPixelCount = [Int](repeating: 0, count: bucketCount)
+        let totalPixelCount = width * height
+
+        for i in stride(from: 0, to: bitmap.count, by: 4) {
+            let r = CGFloat(bitmap[i]) / 255
+            let g = CGFloat(bitmap[i + 1]) / 255
+            let b = CGFloat(bitmap[i + 2]) / 255
+            var h: CGFloat = 0, s: CGFloat = 0, v: CGFloat = 0, a: CGFloat = 0
+            NSColor(red: r, green: g, blue: b, alpha: 1).getHue(&h, saturation: &s, brightness: &v, alpha: &a)
+            // Skip only genuinely gray/black/white pixels: they don't belong to
+            // any real hue and would otherwise dilute every bucket evenly. Kept
+            // deliberately loose — the s*s weighting below already lets truly
+            // pastel pixels fade out on their own; a strict cutoff here was
+            // throwing out most of a typical (slightly muted, JPEG-compressed)
+            // cover.
+            guard s > 0.06, v > 0.05, v < 0.98 else { continue }
+            let bucket = min(bucketCount - 1, Int(h * CGFloat(bucketCount)))
+            let weight = s * s   // favour strongly saturated pixels over pastel ones
+            bucketWeight[bucket] += weight
+            bucketR[bucket] += r * weight
+            bucketG[bucket] += g * weight
+            bucketB[bucket] += b * weight
+            bucketPixelCount[bucket] += 1
+        }
+
+        guard let winner = bucketWeight.indices.max(by: { bucketWeight[$0] < bucketWeight[$1] }),
+              bucketWeight[winner] > 0,
+              Double(bucketPixelCount[winner]) / Double(totalPixelCount) >= minimumDominantShare
+        else { return .white }
+
+        return vibrant((
+            r: bucketR[winner] / bucketWeight[winner],
+            g: bucketG[winner] / bucketWeight[winner],
+            b: bucketB[winner] / bucketWeight[winner]
+        ))
     }
 
     /// Boost the muddy average into something that reads as the cover's accent.

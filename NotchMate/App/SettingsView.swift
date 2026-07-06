@@ -84,6 +84,30 @@ private struct NowPlayingSettings: View {
             Text("settings.mediaSource.hint")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+
+            Section {
+                Picker(String(localized: "settings.spectrum.style", defaultValue: "Spektrum-Stil"), selection: $settings.spectrumStyle) {
+                    ForEach(UserSettings.SpectrumStyle.allCases) { style in
+                        Text(style.localizedName).tag(style)
+                    }
+                }
+                Picker(String(localized: "settings.spectrum.colorSource", defaultValue: "Farbquelle"), selection: $settings.spectrumColorSource) {
+                    ForEach(UserSettings.SpectrumColorSource.allCases) { source in
+                        Text(source.localizedName).tag(source)
+                    }
+                }
+                .disabled(!settings.spectrumStyle.usesAccentPair)
+                ColorPicker(String(localized: "settings.spectrum.colorA", defaultValue: "Akzentfarbe 1"), selection: $settings.spectrumColorA, supportsOpacity: false)
+                    .disabled(!settings.spectrumStyle.usesAccentPair || settings.spectrumColorSource == .cover)
+                ColorPicker(String(localized: "settings.spectrum.colorB", defaultValue: "Akzentfarbe 2"), selection: $settings.spectrumColorB, supportsOpacity: false)
+                    .disabled(!settings.spectrumStyle.usesAccentPair || settings.spectrumColorSource == .cover)
+            } header: {
+                Text(String(localized: "settings.spectrum.header", defaultValue: "Sound-Spektrum"))
+            } footer: {
+                Text(String(localized: "settings.spectrum.hint", defaultValue: "„Vom Cover“ leitet die zweite Farbe automatisch aus dem Album-Akzent ab."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
         .formStyle(.grouped)
         .padding()

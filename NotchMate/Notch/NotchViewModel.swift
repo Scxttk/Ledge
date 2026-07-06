@@ -34,11 +34,14 @@ final class NotchViewModel: ObservableObject {
 
     /// True whenever the island is *not* fully collapsed — i.e. at `.expanded`
     /// or anywhere along the staged collapse/expand walk (`.band`/`.solo`/
-    /// `.condensing`). The interactive hover and hit-test rects key off this
-    /// (not `isExpanded`) so they stay at the large footprint while the
-    /// silhouette is still visibly springing down, instead of snapping to the
-    /// tiny pill the instant the logical state flips. Without it the collapsing
-    /// island can't be caught and clicks fall through mid-walk.
+    /// `.condensing`). The click hit-test rect keys off this so it stays at the
+    /// large footprint while the silhouette is still visibly springing down,
+    /// instead of snapping to the tiny pill the instant the logical state
+    /// flips. Without it the collapsing island can't be caught and clicks fall
+    /// through mid-walk. Hover uses the stricter `isExpanded` instead (see
+    /// `NotchWindowController.evaluateHover`) — a cursor sitting in the
+    /// leftover space of a collapsing/expanding notch shouldn't reopen it,
+    /// only actually hovering the pill should.
     var occupiesExpandedFootprint: Bool { islandState != .collapsed }
 
     @Published var selectedTab: Tab = .music
