@@ -1,117 +1,163 @@
-import AppKit
+#!/usr/bin/swift
+//
+//  GenerateAppIcon.swift — NotchMate
+//  Zeichnet das App-Icon (1a „Waveform") als 1024×1024-PNG, rein CoreGraphics.
+//  Aufruf:  swift Tools/GenerateAppIcon.swift [ausgabe.png]
+//
+//  Koordinaten: 1024er-Raster, Ursprung OBEN LINKS (Kontext wird geflippt),
+//  identisch mit dem Design-Dokument.
+//
+
+import Foundation
 import CoreGraphics
 import ImageIO
-import Foundation
 
-// NotchMate app icon: the whole squircle is a MacBook-style display — dark bezel
-// frame, purple gradient screen, and a wide notch (65 % of the icon width) hanging
-// from the top with the Obsidian logo inside (Tools/obsidian-logo.svg).
-// Usage: swift GenerateAppIcon.swift [output.png]
+// MARK: - Helfer
 
-let S = 1024
-let cs = CGColorSpaceCreateDeviceRGB()
-guard let ctx = CGContext(data: nil, width: S, height: S, bitsPerComponent: 8, bytesPerRow: 0,
-                          space: cs, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { fatalError() }
-// top-left origin
-ctx.translateBy(x: 0, y: CGFloat(S)); ctx.scaleBy(x: 1, y: -1)
+let srgb = CGColorSpace(name: CGColorSpace.sRGB)!
 
-func rgb(_ r: Double, _ g: Double, _ b: Double, _ a: Double = 1) -> CGColor {
-    CGColor(red: r/255, green: g/255, blue: b/255, alpha: a)
+func color(_ hex: UInt32, _ alpha: CGFloat = 1) -> CGColor {
+    CGColor(colorSpace: srgb, components: [
+        CGFloat((hex >> 16) & 0xFF) / 255,
+        CGFloat((hex >> 8) & 0xFF) / 255,
+        CGFloat(hex & 0xFF) / 255,
+        alpha
+    ])!
 }
 
-// Same silhouette as the app's NotchShape.
-func notchPath(_ r: CGRect, topRadius: CGFloat, bottomRadius: CGFloat, topWidthFactor: CGFloat = 1.9) -> CGPath {
-    let p = CGMutablePath()
-    let topH = min(topRadius, r.height)
-    let topW = min(topH * topWidthFactor, r.width/2 - 1)
-    let botR = min(bottomRadius, r.height - topH, (r.width - 2*topW)/2)
-    p.move(to: CGPoint(x: r.minX, y: r.minY))
-    p.addQuadCurve(to: CGPoint(x: r.minX+topW, y: r.minY+topH), control: CGPoint(x: r.minX+topW, y: r.minY))
-    p.addLine(to: CGPoint(x: r.minX+topW, y: r.maxY-botR))
-    p.addQuadCurve(to: CGPoint(x: r.minX+topW+botR, y: r.maxY), control: CGPoint(x: r.minX+topW, y: r.maxY))
-    p.addLine(to: CGPoint(x: r.maxX-topW-botR, y: r.maxY))
-    p.addQuadCurve(to: CGPoint(x: r.maxX-topW, y: r.maxY-botR), control: CGPoint(x: r.maxX-topW, y: r.maxY))
-    p.addLine(to: CGPoint(x: r.maxX-topW, y: r.minY+topH))
-    p.addQuadCurve(to: CGPoint(x: r.maxX, y: r.minY), control: CGPoint(x: r.maxX-topW, y: r.minY))
-    p.closeSubpath()
-    return p
+func gradient(_ stops: [(CGFloat, CGColor)]) -> CGGradient {
+    CGGradient(colorsSpace: srgb,
+               colors: stops.map { $0.1 } as CFArray,
+               locations: stops.map { $0.0 })!
 }
 
-// ---- Bezel squircle (nearly edge-to-edge) ----
-let outerInset: CGFloat = 34
-let outer = CGRect(x: outerInset, y: outerInset, width: CGFloat(S) - 2*outerInset, height: CGFloat(S) - 2*outerInset)
-let outerRadius = outer.width * 0.2237
-let bezel = CGPath(roundedRect: outer, cornerWidth: outerRadius, cornerHeight: outerRadius, transform: nil)
+// MARK: - Konstanten (alles in 1024er-Koordinaten)
+
+let size: CGFloat = 1024
+
+// Bezel: abgerundeter Rahmen, Radius ≈ 22 % der Breite (System-Squircle maskiert zusätzlich)
+let bezelRadius: CGFloat = 225
+
+// Screen-Panel
+let screenRect = CGRect(x: 88, y: 88, width: 848, height: 848)
+let screenRadius: CGFloat = 120
+
+// Notch: 666 px oben / 634 px unten × 134 px, Bodenradius 46, leicht trapezförmig
+// (Pfad unten; Werte entsprechen dem SVG-Entwurf 1a)
+
+// Waveform: 5 Kapseln, Breite 26, Raster 52, zentriert auf (512, 155), Eckradius 13
+let barCorner: CGFloat = 13
+let bars: [CGRect] = [
+    CGRect(x: 395, y: 132, width: 26, height: 46),
+    CGRect(x: 447, y: 116, width: 26, height: 78),
+    CGRect(x: 499, y: 104, width: 26, height: 102),
+    CGRect(x: 551, y: 123, width: 26, height: 64),
+    CGRect(x: 603, y: 111, width: 26, height: 88),
+]
+
+// MARK: - Kontext (geflippt: Ursprung oben links)
+
+let ctx = CGContext(data: nil,
+                    width: Int(size), height: Int(size),
+                    bitsPerComponent: 8, bytesPerRow: 0,
+                    space: srgb,
+                    bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+ctx.translateBy(x: 0, y: size)
+ctx.scaleBy(x: 1, y: -1)
+
+// MARK: - 1) Bezel (#3A383E oben → #100F12 unten)
 
 ctx.saveGState()
-ctx.addPath(bezel); ctx.clip()
-let bezelGrad = CGGradient(colorsSpace: cs, colors: [rgb(58, 56, 62), rgb(16, 15, 18)] as CFArray, locations: [0, 1])!
-ctx.drawLinearGradient(bezelGrad, start: CGPoint(x: outer.midX, y: outer.minY), end: CGPoint(x: outer.midX, y: outer.maxY), options: [])
+ctx.addPath(CGPath(roundedRect: CGRect(x: 0, y: 0, width: size, height: size),
+                   cornerWidth: bezelRadius, cornerHeight: bezelRadius, transform: nil))
+ctx.clip()
+ctx.drawLinearGradient(gradient([(0, color(0x3A383E)), (1, color(0x100F12))]),
+                       start: CGPoint(x: 512, y: 0),
+                       end: CGPoint(x: 512, y: size), options: [])
 ctx.restoreGState()
 
-// ---- Screen panel ----
-let bezelW: CGFloat = 36
-let screen = outer.insetBy(dx: bezelW, dy: bezelW)
-let screenRadius = outerRadius - bezelW
-let panel = CGPath(roundedRect: screen, cornerWidth: screenRadius, cornerHeight: screenRadius, transform: nil)
+// MARK: - 2) Screen (#140F20 unten → #BA94FF oben) — Clip bleibt bis zum Ende aktiv
 
 ctx.saveGState()
-ctx.addPath(panel); ctx.clip()
+ctx.addPath(CGPath(roundedRect: screenRect,
+                   cornerWidth: screenRadius, cornerHeight: screenRadius, transform: nil))
+ctx.clip()
+ctx.drawLinearGradient(gradient([
+    (0.00, color(0x140F20)),
+    (0.38, color(0x301E52)),
+    (0.74, color(0x7A4EC8)),
+    (1.00, color(0xBA94FF)),
+]), start: CGPoint(x: 512, y: 936), end: CGPoint(x: 512, y: 88), options: [])
 
-// deep dark violet melting into a glowing purple horizon
-let screenGrad = CGGradient(colorsSpace: cs, colors: [
-    rgb(20, 15, 32), rgb(48, 30, 82), rgb(122, 78, 200), rgb(186, 148, 255)
-] as CFArray, locations: [0, 0.45, 0.82, 1])!
-ctx.drawLinearGradient(screenGrad, start: CGPoint(x: screen.midX, y: screen.minY), end: CGPoint(x: screen.midX, y: screen.maxY), options: [])
+// MARK: - 3) Bloom: elliptischer Radialverlauf, Zentrum (512, 96), rx 450 / ry 265
 
-let bloom = CGGradient(colorsSpace: cs, colors: [rgb(178, 128, 255, 0.5), rgb(178, 128, 255, 0)] as CFArray, locations: [0, 1])!
-ctx.drawRadialGradient(bloom, startCenter: CGPoint(x: screen.midX, y: screen.maxY), startRadius: 0,
-                       endCenter: CGPoint(x: screen.midX, y: screen.maxY), endRadius: screen.width * 0.7, options: [])
+ctx.saveGState()
+ctx.translateBy(x: 512, y: 96)
+ctx.scaleBy(x: 1, y: 265.0 / 450.0)
+ctx.drawRadialGradient(gradient([
+    (0.00, color(0xFFFCFF, 0.9)),
+    (0.45, color(0xE9DBFF, 0.5)),
+    (1.00, color(0xE9DBFF, 0.0)),
+]), startCenter: .zero, startRadius: 0,
+    endCenter: .zero, endRadius: 450, options: [])
+ctx.restoreGState()
 
-// ---- Notch: 65 % of the icon width ----
-let nW: CGFloat = CGFloat(S) * 0.65
-let nH: CGFloat = 120
-let nRect = CGRect(x: screen.midX - nW/2, y: screen.minY, width: nW, height: nH)
-ctx.setShadow(offset: CGSize(width: 0, height: 10), blur: 26, color: rgb(0, 0, 0, 0.45))
-ctx.addPath(notchPath(nRect, topRadius: 30, bottomRadius: 42))
-ctx.setFillColor(rgb(3, 3, 5))
+// MARK: - 4) Notch (#17151C → #0A090D)
+
+let notch = CGMutablePath()
+notch.move(to: CGPoint(x: 151, y: 88))
+notch.addCurve(to: CGPoint(x: 184, y: 118),
+               control1: CGPoint(x: 170, y: 88), control2: CGPoint(x: 181, y: 98))
+notch.addLine(to: CGPoint(x: 193, y: 176))
+notch.addQuadCurve(to: CGPoint(x: 242, y: 222), control: CGPoint(x: 196, y: 222))
+notch.addLine(to: CGPoint(x: 782, y: 222))
+notch.addQuadCurve(to: CGPoint(x: 831, y: 176), control: CGPoint(x: 828, y: 222))
+notch.addLine(to: CGPoint(x: 840, y: 118))
+notch.addCurve(to: CGPoint(x: 873, y: 88),
+               control1: CGPoint(x: 843, y: 98), control2: CGPoint(x: 854, y: 88))
+notch.closeSubpath()
+
+ctx.saveGState()
+ctx.addPath(notch)
+ctx.clip()
+ctx.drawLinearGradient(gradient([(0, color(0x17151C)), (1, color(0x0A090D))]),
+                       start: CGPoint(x: 512, y: 88),
+                       end: CGPoint(x: 512, y: 222), options: [])
+ctx.restoreGState()
+
+// MARK: - 5) Waveform-Balken — Pass 1: Glow (#A97BFF, Blur 20, 80 %)
+
+let allBars = CGMutablePath()
+for b in bars {
+    allBars.addPath(CGPath(roundedRect: b, cornerWidth: barCorner, cornerHeight: barCorner, transform: nil))
+}
+ctx.saveGState()
+ctx.setShadow(offset: .zero, blur: 20, color: color(0xA97BFF, 0.8))
+ctx.addPath(allBars)
+ctx.setFillColor(color(0xA97BFF))
 ctx.fillPath()
-ctx.setShadow(offset: .zero, blur: 0, color: CGColor(gray: 0, alpha: 0))
-
-// ---- Obsidian logo in the notch ----
-let logoURL = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("obsidian-logo.svg")
-guard let logo = NSImage(contentsOf: logoURL) else { fatalError("obsidian-logo.svg not found next to the script") }
-let logoH: CGFloat = 100
-let logoW = logoH * logo.size.width / logo.size.height
-let logoRect = CGRect(x: nRect.midX - logoW/2, y: nRect.minY + (nH - logoH)/2 - 4, width: logoW, height: logoH)
-ctx.saveGState()
-let ns = NSGraphicsContext(cgContext: ctx, flipped: true)
-NSGraphicsContext.saveGraphicsState()
-NSGraphicsContext.current = ns
-logo.draw(in: logoRect, from: .zero, operation: .sourceOver, fraction: 1,
-          respectFlipped: true, hints: [.interpolation: NSImageInterpolation.high.rawValue])
-NSGraphicsContext.restoreGraphicsState()
 ctx.restoreGState()
 
-// subtle top sheen on the glass
-let sheen = CGGradient(colorsSpace: cs, colors: [rgb(255, 255, 255, 0.10), rgb(255, 255, 255, 0)] as CFArray, locations: [0, 1])!
-ctx.drawLinearGradient(sheen, start: CGPoint(x: screen.midX, y: screen.minY), end: CGPoint(x: screen.midX, y: screen.minY + 200), options: [])
+// MARK: - 5b) Waveform-Balken — Pass 2: Verlauf pro Balken (#F1E7FF oben → #C09AFF unten)
 
-ctx.restoreGState()
+for b in bars {
+    ctx.saveGState()
+    ctx.addPath(CGPath(roundedRect: b, cornerWidth: barCorner, cornerHeight: barCorner, transform: nil))
+    ctx.clip()
+    ctx.drawLinearGradient(gradient([(0, color(0xF1E7FF)), (1, color(0xC09AFF))]),
+                           start: CGPoint(x: b.midX, y: b.minY),
+                           end: CGPoint(x: b.midX, y: b.maxY), options: [])
+    ctx.restoreGState()
+}
 
-// bezel inner edge highlight
-ctx.saveGState()
-ctx.addPath(panel)
-ctx.setStrokeColor(rgb(255, 255, 255, 0.10))
-ctx.setLineWidth(3)
-ctx.strokePath()
-ctx.restoreGState()
+ctx.restoreGState() // Screen-Clip
 
-// ---- write PNG ----
-let out = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "icon_1024.png"
-guard let img = ctx.makeImage(),
-      let dest = CGImageDestinationCreateWithURL(URL(fileURLWithPath: out) as CFURL, "public.png" as CFString, 1, nil)
-else { fatalError("write failed") }
-CGImageDestinationAddImage(dest, img, nil)
+// MARK: - PNG schreiben
+
+let outPath = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "AppIcon_1024.png"
+let url = URL(fileURLWithPath: outPath) as CFURL
+let image = ctx.makeImage()!
+let dest = CGImageDestinationCreateWithURL(url, "public.png" as CFString, 1, nil)!
+CGImageDestinationAddImage(dest, image, nil)
 CGImageDestinationFinalize(dest)
-print("wrote \(out)")
+print("✓ \(outPath) (1024×1024) geschrieben")
