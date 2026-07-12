@@ -98,4 +98,25 @@ final class ObsidianCaptureIntegrationTests: XCTestCase {
         let pattern = #"- \d{2}:\d{2} stamped"#
         XCTAssertNotNil(content.range(of: pattern, options: .regularExpression))
     }
+
+    func testAppendFocusSessionWritesDataviewBullet() throws {
+        let start = Date(timeIntervalSince1970: 1_752_000_000) // fixed, arbitrary
+        let url = try ObsidianVault().appendFocusSession(
+            name: "Fokus", start: start, minutes: 25, settings: settings)
+        let content = try String(contentsOf: url, encoding: .utf8)
+        XCTAssertTrue(content.contains(settings.focusHeading))
+        XCTAssertTrue(content.contains("Fokus (25 min)"))
+        XCTAssertTrue(content.contains("[minutes:: 25]"))
+        XCTAssertTrue(content.range(of: #"\[start:: \d{4}-\d{2}-\d{2}T\d{2}:\d{2}\]"#, options: .regularExpression) != nil)
+    }
+
+    func testFocusSessionAndCaptureLiveUnderSeparateHeadings() throws {
+        _ = try ObsidianVault().append(text: "idea", asLink: false, settings: settings)
+        _ = try ObsidianVault().appendFocusSession(name: "Fokus", start: Date(), minutes: 10, settings: settings)
+        let content = try String(contentsOf: todayNoteURL(), encoding: .utf8)
+        XCTAssertTrue(content.contains(settings.captureHeading))
+        XCTAssertTrue(content.contains(settings.focusHeading))
+        XCTAssertTrue(content.contains("- idea"))
+        XCTAssertTrue(content.contains("(10 min)"))
+    }
 }

@@ -220,13 +220,22 @@ private final class VolumeHUDProvider {
 
     // MARK: Driving volume / mute
 
-    /// Adjust the scalar volume by `delta`, clamped to 0...1, unmuting first so a
-    /// volume-up while muted behaves like macOS.
+    /// Adjust the scalar volume by `delta`, clamped to 0...1. Treats a muted
+    /// device as level 0 rather than reading its stale pre-mute scalar, writes
+    /// the new scalar *before* touching mute (so unmuting never briefly exposes
+    /// an old, louder volume), and engages/clears real hardware mute exactly at
+    /// the silence boundary — matching macOS's own behavior and avoiding the
+    /// audible click a bare scalar-to-0 write can cause on some hardware.
     func changeVolume(by delta: Double) {
         guard device != 0 else { return }
-        if readMute() { setMute(false) }
-        let target = min(max(readVolume() + delta, 0), 1)
+        let wasMuted = readMute()
+        let base = wasMuted ? 0 : readVolume()
+        let target = min(max(base + delta, 0), 1)
         setVolume(target)
+        let shouldMute = target <= 0.0001
+        if shouldMute != wasMuted {
+            setMute(shouldMute)
+        }
     }
 
     func toggleMute() {

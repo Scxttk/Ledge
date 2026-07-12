@@ -16,6 +16,29 @@ final class SpectrumAnalyzer: ObservableObject {
     @Published private(set) var bands: [CGFloat]
     /// True once a tap is actually running and feeding real data.
     @Published private(set) var isLive = false
+    /// True while the tapped signal actually carries audible content — not just
+    /// whether the tap is running. This is what drives "is something playing"
+    /// for sources with no scriptable now-playing state (browser video, calls,
+    /// system sounds, …): CoreAudio's own per-process "is running output" API
+    /// turned out to be unreliable in practice (some helper processes report it
+    /// permanently true; short-lived ones can flip true and false again before
+    /// a listener callback ever fires), so this reads the real signal the tap
+    /// already has instead of trusting that heuristic. Held true for a couple
+    /// of seconds after the signal drops so brief gaps (between songs, a pause
+    /// in speech) don't flicker the hero pill.
+    @Published private(set) var hasSignal = false
+    private var lastSignalTime: CFTimeInterval = 0
+    private static let signalHoldSeconds: CFTimeInterval = 2.0
+    private static let signalThreshold: Float = 0.08
+
+    /// Bundle ID of whichever app currently has an active output stream, so the
+    /// collapsed pill can show its icon instead of a generic glyph when there's
+    /// no scriptable track. Refreshed on a plain 1s poll (not a CoreAudio
+    /// property listener) while the tap is running — a poll is simpler and, for
+    /// this cosmetic purpose, more than fast enough; see `hasSignal`'s doc for
+    /// why the listener-based equivalent proved unreliable for the on/off signal.
+    @Published private(set) var sourceBundleID: String?
+    private var sourceCheckTimer: DispatchSourceTimer?
 
     let bandCount: Int
 
@@ -47,17 +70,30 @@ final class SpectrumAnalyzer: ObservableObject {
     private var magnitudes: [Float]
     private var smoothed: [Float]          // per-band, with attack/decay
     private var lastPublish = 0.0
-    // dB window mapped to 0…1 (level-meter style). Tuned from measured output:
-    // typical music sits ~0.4–0.6 with headroom for beats, so bars visibly move.
-    private static let dbFloor: Float = 30
-    private static let dbCeil: Float = 52
+    // The dB window used to be a fixed absolute range (30…52, then 47, then
+    // 40 dB), retuned three times and still wrong: measuring real playback
+    // showed two ordinary tracks can differ in absolute loudness by ~20 dB
+    // (mastering level, not "quiet vs busy" within a song). A fixed window
+    // can't serve both — either it clips a loud track to the ceiling almost
+    // immediately, or a quiet track never clears the floor. So the window
+    // now floats: `loudnessCeilDb` tracks the loudest thing currently
+    // playing (fast attack, slow release — like a VU meter's peak hold) and
+    // the dB→0…1 mapping always uses a fixed-width slice directly below it,
+    // so each track's own dynamic range gets used regardless of its overall
+    // loudness.
+    private var loudnessCeilDb: Float = 40   // seeded at the old static ceiling so the first second isn't blank
+    private var lastLoudnessUpdate: CFTimeInterval = 0
+    private static let loudnessAttack: Float = 0.5        // fraction of the way to a new peak, per callback
+    private static let loudnessReleasePerSecond: Float = 6 // dB/s the ceiling falls once the signal quiets down
+    private static let loudnessCeilMin: Float = 10          // never let a silent stretch collapse the window
+    private static let windowWidthDb: Float = 26
     // Higher bands carry ~20 dB less energy than the bass; lift them (curved so
     // the low bands stay put) to keep every bar in the same visible range.
     private static let highBandBoost: Float = 20
 
     private let queue = DispatchQueue(label: "com.scott.notchmate.spectrum", qos: .userInitiated)
 
-    init(bandCount: Int = 5) {
+    init(bandCount: Int = 6) {
         self.bandCount = bandCount
         self.bands = Array(repeating: 0, count: bandCount)
         self.log2n = vDSP_Length(log2(Float(fftSize)))
@@ -130,6 +166,7 @@ final class SpectrumAnalyzer: ObservableObject {
 
         running = true
         registerDeviceChangeListener()
+        startSourceCheckTimer()
         DispatchQueue.main.async { self.isLive = true }
     }
 
@@ -139,12 +176,16 @@ final class SpectrumAnalyzer: ObservableObject {
         pendingRebuild = nil
         teardown()
         unregisterDeviceChangeListener()
+        stopSourceCheckTimer()
         guard wasRunning else { return }
         // Reset published state on the main thread — weak so a pending block can
         // never resurrect a deallocating instance.
+        lastSignalTime = 0
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             self.isLive = false
+            self.hasSignal = false
+            self.sourceBundleID = nil
             self.bands = Array(repeating: 0, count: self.bandCount)
         }
     }
@@ -255,9 +296,13 @@ final class SpectrumAnalyzer: ObservableObject {
         let fMin = 40.0
         let fMax = min(16_000.0, sampleRate / 2)
         let binHz = sampleRate / Double(fftSize)
-        let attack: Float = 0.6      // how fast bars rise toward a new peak
-        let decay: Float = 0.82      // how fast they fall
+        // Snappier than before (was 0.6/0.82) — quicker to jump on a transient
+        // and quicker to fall back between beats, so the bars visibly punch
+        // instead of gliding: more the iPhone's twitchy read, less a slow wave.
+        let attack: Float = 0.78     // how fast bars rise toward a new peak
+        let decay: Float = 0.7       // how fast they fall
 
+        var rawDb = [Float](repeating: 0, count: bandCount)
         for b in 0..<bandCount {
             let lo = fMin * pow(fMax / fMin, Double(b) / Double(bandCount))
             let hi = fMin * pow(fMax / fMin, Double(b + 1) / Double(bandCount))
@@ -265,17 +310,61 @@ final class SpectrumAnalyzer: ObservableObject {
             let hiBin = min(fftSize / 2 - 1, max(loBin, Int(hi / binHz)))
             var peak: Float = 0
             for bin in loBin...hiBin { peak = max(peak, magnitudes[bin]) }
-            // Map magnitude to dB, then to 0…1 over a window — like a level meter,
-            // so quiet passages sit low and beats reach the top: real dynamics.
-            // Higher bands carry ~20 dB less energy, so lift them (measured) to
-            // keep every bar in the same visible range instead of pinned low.
-            let db = 20 * log10(peak + 1e-6)
+            rawDb[b] = 20 * log10(peak + 1e-6)
+        }
+
+        // Slide the window to follow the loudest band this callback: fast
+        // attack so a track coming in loud doesn't take seconds to stop
+        // clipping, slow release so it doesn't chase every quiet beat within
+        // a song — only settles down once the track itself has been quieter
+        // for a couple of seconds.
+        let now = CACurrentMediaTime()
+        let dt = lastLoudnessUpdate == 0 ? 0 : Float(now - lastLoudnessUpdate)
+        lastLoudnessUpdate = now
+        let framePeakDb = rawDb.max() ?? loudnessCeilDb
+        if framePeakDb > loudnessCeilDb {
+            loudnessCeilDb += (framePeakDb - loudnessCeilDb) * Self.loudnessAttack
+        } else {
+            loudnessCeilDb -= Self.loudnessReleasePerSecond * dt
+        }
+        loudnessCeilDb = max(Self.loudnessCeilMin, loudnessCeilDb)
+        let floorDb = loudnessCeilDb - Self.windowWidthDb
+
+        for b in 0..<bandCount {
+            // Map magnitude to dB, then to 0…1 over the (now floating) window —
+            // like a level meter, so quiet passages sit low and beats reach the
+            // top: real dynamics. Higher bands carry ~20 dB less energy, so
+            // lift them (measured) to keep every bar in the same visible range
+            // instead of pinned low.
             let boost = Self.highBandBoost * pow(Float(b) / Float(max(1, bandCount - 1)), 1.5)
-            let norm = (db + boost - Self.dbFloor) / (Self.dbCeil - Self.dbFloor)
+            let norm = (rawDb[b] + boost - floorDb) / Self.windowWidthDb
             let level = min(1, max(0, norm))
             smoothed[b] = level > smoothed[b]
                 ? smoothed[b] + (level - smoothed[b]) * attack
                 : smoothed[b] * decay
+        }
+        if smoothed.contains(where: { $0 > Self.signalThreshold }) {
+            lastSignalTime = CACurrentMediaTime()
+        }
+    }
+
+    /// Blend each band a little with its neighbours (simple 3-tap kernel, edges
+    /// replicated) so the published shape reads as one continuous curve instead
+    /// of `bandCount` independent, jumpy bars — with only 6 bands, one loud
+    /// isolated bin next to two quiet ones looked noisy rather than musical.
+    /// (A lighter 15/70/15 variant was tried briefly to bring back more
+    /// between-bar contrast, but that was diagnosed against a tap that had
+    /// Safari/Twitch audio mixed in with Spotify at the same time — revert to
+    /// even 25/50/25 until re-checked against a clean single source.)
+    /// Applied only at publish time, on a copy: `smoothed` itself keeps its
+    /// unblended per-band values for the attack/decay recursion above, so this
+    /// can't compound blur into itself frame over frame.
+    private func spatiallySmoothed(_ source: [Float]) -> [Float] {
+        guard source.count > 2 else { return source }
+        return source.indices.map { i in
+            let prev = source[max(0, i - 1)]
+            let next = source[min(source.count - 1, i + 1)]
+            return (prev + 2 * source[i] + next) / 4
         }
     }
 
@@ -284,8 +373,13 @@ final class SpectrumAnalyzer: ObservableObject {
         let now = CACurrentMediaTime()
         guard now - lastPublish >= 1.0 / 30 else { return }
         lastPublish = now
-        let snapshot = smoothed.map { CGFloat($0) }
-        DispatchQueue.main.async { [weak self] in self?.bands = snapshot }
+        let snapshot = spatiallySmoothed(smoothed).map { CGFloat($0) }
+        let signalNow = now - lastSignalTime < Self.signalHoldSeconds
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.bands = snapshot
+            if self.hasSignal != signalNow { self.hasSignal = signalNow }
+        }
     }
 
     // MARK: - CoreAudio property helpers
@@ -308,5 +402,78 @@ final class SpectrumAnalyzer: ObservableObject {
         )
         guard AudioObjectGetPropertyData(tap, &addr, 0, nil, &size, &asbd) == noErr else { return nil }
         return asbd
+    }
+
+    // MARK: - Source app identification
+
+    private func startSourceCheckTimer() {
+        let timer = DispatchSource.makeTimerSource(queue: queue)
+        timer.schedule(deadline: .now(), repeating: 1.0)
+        timer.setEventHandler { [weak self] in self?.refreshSourceBundleID() }
+        timer.resume()
+        sourceCheckTimer = timer
+    }
+
+    private func stopSourceCheckTimer() {
+        sourceCheckTimer?.cancel()
+        sourceCheckTimer = nil
+    }
+
+    /// Scans every process with an active output stream and picks the first
+    /// one that isn't us, so the collapsed pill can show its icon. Runs on
+    /// `queue`, once a second — see `sourceBundleID`'s doc for why a plain poll
+    /// beats a CoreAudio property listener here.
+    private func refreshSourceBundleID() {
+        let ownBundleID = Bundle.main.bundleIdentifier
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyProcessObjectList,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var size: UInt32 = 0
+        guard AudioObjectGetPropertyDataSize(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size) == noErr,
+              size > 0 else {
+            publish(sourceBundleID: nil)
+            return
+        }
+        let count = Int(size) / MemoryLayout<AudioObjectID>.size
+        var processes = [AudioObjectID](repeating: 0, count: count)
+        guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &processes) == noErr else {
+            publish(sourceBundleID: nil)
+            return
+        }
+
+        var isRunningAddress = AudioObjectPropertyAddress(
+            mSelector: kAudioProcessPropertyIsRunningOutput,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        for process in processes {
+            var isRunning: UInt32 = 0
+            var runningSize = UInt32(MemoryLayout<UInt32>.size)
+            guard AudioObjectGetPropertyData(process, &isRunningAddress, 0, nil, &runningSize, &isRunning) == noErr,
+                  isRunning != 0 else { continue }
+            guard let bundleID = stringProperty(process, kAudioProcessPropertyBundleID), bundleID != ownBundleID else { continue }
+            publish(sourceBundleID: Self.attributedBundleID(for: bundleID))
+            return
+        }
+        publish(sourceBundleID: nil)
+    }
+
+    /// WebKit's audio/GPU XPC helpers (e.g. `com.apple.WebKit.GPU`) are what
+    /// CoreAudio actually reports as the running process for any WebKit-based
+    /// browser tab — they're spawned on demand and re-parented to `launchd`,
+    /// so there's no reliable way back to the tab's own app. Safari is by far
+    /// the common case, so attribute these to Safari rather than showing no
+    /// icon at all.
+    private static func attributedBundleID(for bundleID: String) -> String {
+        bundleID.hasPrefix("com.apple.WebKit") ? "com.apple.Safari" : bundleID
+    }
+
+    private func publish(sourceBundleID id: String?) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.sourceBundleID != id else { return }
+            self.sourceBundleID = id
+        }
     }
 }

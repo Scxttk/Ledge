@@ -10,15 +10,24 @@ struct NotchRootView: View {
     @ObservedObject var capture: ObsidianCapture
     @ObservedObject var spectrum: SpectrumAnalyzer
 
-    /// Run the audio tap whenever music is playing and the screen is on — the
-    /// wave is then live in both the expanded music tab and the collapsed pill.
-    /// Gated on `screensAwake` so it isn't tapping/FFT-ing to a dark display.
+    /// Run the audio tap whenever the screen is on, regardless of whether
+    /// anything is playing — `spectrum.hasSignal` (derived from the tapped
+    /// signal itself, see `SpectrumAnalyzer`) is what tells the rest of the UI
+    /// whether audio is actually audible right now. Gated on `screensAwake` so
+    /// it isn't tapping/FFT-ing to a dark display.
     private func syncSpectrum() {
-        if nowPlaying.isPlaying && nowPlaying.screensAwake {
+        if nowPlaying.screensAwake {
             spectrum.start()
         } else {
             spectrum.stop()
         }
+    }
+
+    /// True whenever the pill hero (cover-or-generic-icon + live wave) should
+    /// take over the collapsed pill — Spotify/Music playing, or any other
+    /// system audio (browser video, calls, …) with no scriptable track to show.
+    private var hasAudioHero: Bool {
+        nowPlaying.isPlaying || spectrum.hasSignal
     }
 
     private var islandWidth: CGFloat {
@@ -31,20 +40,20 @@ struct NotchRootView: View {
             // Playing or timing: the pill hero (cover + spectrum and/or timer
             // readout) has already taken over, so the capsule is pill-width —
             // no tab label to make room for.
-            if nowPlaying.isPlaying || pomodoro.pillText != nil {
-                return viewModel.collapsedWidth(isPlaying: nowPlaying.isPlaying, hasItems: !shelf.items.isEmpty, timerText: pomodoro.pillText)
+            if hasAudioHero || pomodoro.pillText != nil {
+                return viewModel.collapsedWidth(isPlaying: hasAudioHero, hasItems: !shelf.items.isEmpty, timerText: pomodoro.pillText)
             }
             // Otherwise hug the single surviving tab group (selected icon + label).
             return viewModel.soloWidth(for: viewModel.selectedTab)
         case .condensing:
             // Already the pill's width: the capsule narrows onto the selected
             // icon during this stage, so the final swap changes nothing.
-            return viewModel.collapsedWidth(isPlaying: nowPlaying.isPlaying, hasItems: !shelf.items.isEmpty, timerText: pomodoro.pillText)
+            return viewModel.collapsedWidth(isPlaying: hasAudioHero, hasItems: !shelf.items.isEmpty, timerText: pomodoro.pillText)
         case .collapsed:
             if let activity = activities.current {
                 return activity.kind == .audioRoute ? NotchLayout.activityRouteWidth : NotchLayout.activityWidth
             }
-            return viewModel.collapsedWidth(isPlaying: nowPlaying.isPlaying, hasItems: !shelf.items.isEmpty, timerText: pomodoro.pillText)
+            return viewModel.collapsedWidth(isPlaying: hasAudioHero, hasItems: !shelf.items.isEmpty, timerText: pomodoro.pillText)
         }
     }
     private var islandHeight: CGFloat {
@@ -119,7 +128,7 @@ struct NotchRootView: View {
         // for the tab bar and just shrinks into place; this dissolves the
         // "close Capture while music runs" dilemma, because the collapse
         // target depends on the pill content, not on the tab.
-        let heroContent = nowPlaying.isPlaying || pomodoro.pillText != nil
+        let heroContent = hasAudioHero || pomodoro.pillText != nil
         let pillHero = heroContent && (state == .solo || state == .condensing)
         let showsExpanded = state != .collapsed && !pillHero
         // Hero content → the tab bar and the pill hero are *different* content,
@@ -149,7 +158,7 @@ struct NotchRootView: View {
                     // → collapsed when playing (one persistent view, so only the
                     // capsule shrinks around it — no swap), or just at collapsed
                     // when idle.
-                    CollapsedView(viewModel: viewModel, nowPlaying: nowPlaying, shelf: shelf, pomodoro: pomodoro, spectrum: spectrum)
+                    CollapsedView(viewModel: viewModel, nowPlaying: nowPlaying, shelf: shelf, pomodoro: pomodoro, spectrum: spectrum, hasAudioHero: hasAudioHero)
                         .foregroundStyle(.white)
                         .transition(handover)
                 }
@@ -424,6 +433,19 @@ private struct CollapsedView: View {
     @ObservedObject var shelf: FileShelfModel
     @ObservedObject var pomodoro: PomodoroManager
     @ObservedObject var spectrum: SpectrumAnalyzer
+    /// Whether the pill hero (cover-or-generic-icon + wave) should show at all —
+    /// true for Spotify/Music, but also for any other system audio (browser
+    /// video, calls, …) that has no scriptable track to show a cover for.
+    let hasAudioHero: Bool
+
+    /// Cached icon for `spectrum.sourceBundleID`, resolved once per bundle ID
+    /// change rather than on every wave-bar redraw.
+    @State private var sourceAppIcon: NSImage?
+    @State private var sourceAppIconBundleID: String?
+    /// Accent derived from `sourceAppIcon`, the same way a track's cover tints
+    /// its wave — so generic system audio (Safari, …) doesn't fall back to a
+    /// flat white wave next to a colourful app icon.
+    @State private var sourceAppTint: Color?
 
     /// Idle glyph reflects the tab you'd return to, so it isn't always the music
     /// note when you last used another tab.
@@ -436,35 +458,87 @@ private struct CollapsedView: View {
         }
     }
 
+    /// The accent to tint the wave with: the real track's accent when we're
+    /// actually showing that track's cover, else the source app icon's accent
+    /// (Safari's blue, …) for generic system audio, else `nil` (→ white) when
+    /// neither is available.
+    private var waveTint: Color? {
+        if nowPlaying.isPlaying, nowPlaying.track?.artworkURL != nil {
+            return nowPlaying.artworkColor
+        }
+        return sourceAppTint
+    }
+
+    private func refreshSourceAppIcon(for bundleID: String?) {
+        guard bundleID != sourceAppIconBundleID else { return }
+        sourceAppIconBundleID = bundleID
+        sourceAppTint = nil
+        guard let bundleID,
+              let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else {
+            sourceAppIcon = nil
+            return
+        }
+        let icon = NSWorkspace.shared.icon(forFile: url.path)
+        sourceAppIcon = icon
+        ArtworkColor.fetch(from: icon, cacheKey: bundleID) { color in
+            guard bundleID == sourceAppIconBundleID else { return }
+            sourceAppTint = color
+        }
+    }
+
     var body: some View {
         // Spacings/paddings here must stay in lock-step with the width estimate
         // in `NotchViewModel.collapsedWidth`, or the pill clips against the
         // silhouette — so both sides read from the same `NotchLayout` constants.
         HStack(spacing: NotchLayout.collapsedItemSpacing) {
-            if nowPlaying.isPlaying, let url = nowPlaying.track?.artworkURL {
-                // Fade the new cover in (transaction animation) over a placeholder
-                // tinted to the track's accent colour rather than flat grey, so a
-                // track change doesn't flash a grey square then pop during the
-                // hero crossfade.
-                AsyncImage(url: url, transaction: Transaction(animation: .easeInOut(duration: 0.2))) { phase in
-                    if let image = phase.image {
-                        image.resizable().scaledToFill()
-                    } else {
-                        nowPlaying.artworkColor ?? Color.white.opacity(0.1)
+            if hasAudioHero {
+                if nowPlaying.isPlaying, let url = nowPlaying.track?.artworkURL {
+                    // Fade the new cover in (transaction animation) over a placeholder
+                    // tinted to the track's accent colour rather than flat grey, so a
+                    // track change doesn't flash a grey square then pop during the
+                    // hero crossfade.
+                    AsyncImage(url: url, transaction: Transaction(animation: .easeInOut(duration: 0.2))) { phase in
+                        if let image = phase.image {
+                            image.resizable().scaledToFill()
+                        } else {
+                            nowPlaying.artworkColor ?? Color.white.opacity(0.1)
+                        }
                     }
+                    .frame(width: NotchLayout.collapsedArtworkWidth, height: NotchLayout.collapsedArtworkWidth)
+                    .clipShape(RoundedRectangle(cornerRadius: NotchLayout.collapsedArtworkCornerRadius))
+                } else {
+                    // System audio with no scriptable track (browser video, a
+                    // call, …) — show the source app's own icon full-bleed when
+                    // we can identify it (no background/padding: app icons like
+                    // Safari's already bake in their own rounding and margin, so
+                    // wrapping them in another rounded-rect frame just shrank
+                    // them further and read as an extra border), else fall back
+                    // to a plain glyph on a tinted background.
+                    Group {
+                        if let sourceAppIcon {
+                            Image(nsImage: sourceAppIcon).resizable().scaledToFit()
+                        } else {
+                            RoundedRectangle(cornerRadius: NotchLayout.collapsedArtworkCornerRadius)
+                                .fill(Color.white.opacity(0.1))
+                                .overlay {
+                                    Image(systemName: "waveform").font(.system(size: 11))
+                                }
+                        }
+                    }
+                    .frame(width: NotchLayout.collapsedArtworkWidth, height: NotchLayout.collapsedArtworkWidth)
+                    .onAppear { refreshSourceAppIcon(for: spectrum.sourceBundleID) }
+                    .onChange(of: spectrum.sourceBundleID) { _, bundleID in refreshSourceAppIcon(for: bundleID) }
                 }
-                .frame(width: NotchLayout.collapsedArtworkWidth, height: NotchLayout.collapsedArtworkWidth)
-                .clipShape(RoundedRectangle(cornerRadius: NotchLayout.collapsedArtworkCornerRadius))
                 WaveBarsView(
                     isActive: nowPlaying.screensAwake,
-                    tint: nowPlaying.artworkColor,
+                    tint: waveTint,
                     bands: spectrum.isLive ? spectrum.bands : nil,
                     count: NotchLayout.collapsedWaveBarCount,
                     maxHeight: NotchLayout.collapsedWaveMaxHeight,
                     barWidth: NotchLayout.collapsedWaveBarWidth,
                     spacing: NotchLayout.collapsedWaveSpacing
                 )
-                .frame(width: NotchLayout.collapsedWavesWidth, height: NotchLayout.collapsedWavesWidth)
+                .frame(width: NotchLayout.collapsedWavesWidth, height: NotchLayout.collapsedArtworkWidth)
             } else if pomodoro.pillText == nil {
                 Image(systemName: idleIcon)
                     .font(.system(size: NotchLayout.bandFontSize, weight: .medium))

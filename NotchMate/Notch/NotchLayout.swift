@@ -32,14 +32,18 @@ enum NotchLayout {
     /// "abgeschnitten von") the top screen edge.
     static let collapsedArtworkWidth: CGFloat = 14
     /// The little frequency (wave-bars) visualizer next to the artwork.
-    static let collapsedWavesWidth: CGFloat = 14
+    static let collapsedWavesWidth: CGFloat = 16
     /// Corner radius of the collapsed pill's artwork thumbnail.
     static let collapsedArtworkCornerRadius: CGFloat = 3.5
-    /// Wave-bars geometry inside the collapsed pill (3 slim bars).
-    static let collapsedWaveBarCount: Int = 3
+    /// Wave-bars geometry inside the collapsed pill: 5 bars, thicker relative
+    /// to their gaps than a hairline equalizer — matches the iPhone Dynamic
+    /// Island's chunkier, closely-packed bars more closely than the earlier
+    /// 6-hairline-bar version did. (5 × 2.0 + 4 × 1.0 = 14, `collapsedWavesWidth`
+    /// above rounds up for a hair of buffer.)
+    static let collapsedWaveBarCount: Int = 5
     static let collapsedWaveMaxHeight: CGFloat = 12
-    static let collapsedWaveBarWidth: CGFloat = 2.5
-    static let collapsedWaveSpacing: CGFloat = 2
+    static let collapsedWaveBarWidth: CGFloat = 2.0
+    static let collapsedWaveSpacing: CGFloat = 1.0
     /// Font size of the shelf badge's item count in the collapsed pill.
     static let collapsedBadgeFontSize: CGFloat = 9
     /// The shelf badge (tray icon + item count, up to ~2 digits).

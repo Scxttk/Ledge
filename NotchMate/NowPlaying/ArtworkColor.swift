@@ -23,6 +23,7 @@ import SwiftUI
 enum ArtworkColor {
     private static let context = CIContext(options: [.workingColorSpace: NSNull()])
     private static var cache: [URL: Color] = [:]
+    private static var iconCache: [String: Color] = [:]
 
     /// Loads `url` off the main thread and calls back on the main thread with a
     /// tint, or nil if it couldn't be derived. Results are cached per URL.
@@ -40,9 +41,33 @@ enum ArtworkColor {
         }
     }
 
+    /// Same idea as `fetch(from:completion:)`, but for an in-memory app icon
+    /// (the collapsed pill's generic-audio fallback, e.g. Safari) rather than a
+    /// remote/file artwork URL — used to tint that wave the same way a track's
+    /// cover tints it, instead of leaving it flat white. Cached by `cacheKey`
+    /// (the source app's bundle ID) since an `NSImage` isn't itself hashable.
+    static func fetch(from image: NSImage, cacheKey: String, completion: @escaping (Color?) -> Void) {
+        if let cached = iconCache[cacheKey] {
+            completion(cached)
+            return
+        }
+        DispatchQueue.global(qos: .utility).async {
+            let color = pngData(from: image).flatMap(dominantColor(from:))
+            DispatchQueue.main.async {
+                if let color { iconCache[cacheKey] = color }
+                completion(color)
+            }
+        }
+    }
+
     private static func data(for url: URL) -> Data? {
         if url.isFileURL { return try? Data(contentsOf: url) }
         return try? Data(contentsOf: url)   // artwork URLs are small remote JPEGs
+    }
+
+    private static func pngData(from image: NSImage) -> Data? {
+        guard let tiff = image.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff) else { return nil }
+        return rep.representation(using: .png, properties: [:])
     }
 
     /// A winning hue bucket must contain at least this fraction of all sampled
@@ -103,7 +128,17 @@ enum ArtworkColor {
             // cover.
             guard s > 0.06, v > 0.05, v < 0.98 else { continue }
             let bucket = min(bucketCount - 1, Int(h * CGFloat(bucketCount)))
-            let weight = s * s   // favour strongly saturated pixels over pastel ones
+            // s² alone let a large area of dark-but-saturated shadow/background
+            // (a deep teal-black gradient, say) outvote a smaller, brighter,
+            // obviously-the-accent region — dark colours can be just as
+            // colorimetrically saturated as bright ones, but read as "shadow"
+            // rather than "the cover's colour". The extra v² factor makes
+            // brightness pull its own weight alongside saturation, so a bright
+            // vivid patch reliably beats a dim one of similar hue-purity even
+            // when the dim one covers more pixels. Verified against a
+            // magenta-swirl-on-dark-teal cover (Linkin Park, "Over Each
+            // Other") that was picking the teal background before this.
+            let weight = s * s * v * v
             bucketWeight[bucket] += weight
             bucketR[bucket] += r * weight
             bucketG[bucket] += g * weight
@@ -128,8 +163,8 @@ enum ArtworkColor {
         let ns = NSColor(red: rgb.r, green: rgb.g, blue: rgb.b, alpha: 1).usingColorSpace(.deviceRGB)
         var h: CGFloat = 0, s: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
         ns?.getHue(&h, saturation: &s, brightness: &b, alpha: &a)
-        let saturation = min(1, max(0.55, s * 1.8))
-        let brightness = min(1, max(0.7, b * 1.25))
+        let saturation = min(1, max(0.65, s * 2.0))
+        let brightness = min(1, max(0.8, b * 1.3))
         return Color(hue: h, saturation: saturation, brightness: brightness)
     }
 }

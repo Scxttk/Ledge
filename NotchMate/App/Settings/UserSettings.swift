@@ -132,6 +132,8 @@ final class UserSettings: ObservableObject {
         static let captureMode = "obsidianCaptureMode"
         static let captureTimestamp = "obsidianCaptureTimestamp"
         static let captureHotkeyEnabled = "obsidianCaptureHotkeyEnabled"
+        static let focusTrackingEnabled = "obsidianFocusTrackingEnabled"
+        static let focusHeading = "obsidianFocusHeading"
         // Focus timers (pomodoro)
         static let timerPresets = "timerPresets"
         static let timerCountsUp = "timerCountsUp"
@@ -206,6 +208,14 @@ final class UserSettings: ObservableObject {
     @Published var captureHotkeyEnabled: Bool {
         didSet { defaults.set(captureHotkeyEnabled, forKey: Key.captureHotkeyEnabled) }
     }
+    /// Log completed/aborted focus-preset sessions to the daily note.
+    @Published var focusTrackingEnabled: Bool {
+        didSet { defaults.set(focusTrackingEnabled, forKey: Key.focusTrackingEnabled) }
+    }
+    /// Markdown heading the focus-session bullet is inserted under.
+    @Published var focusHeading: String {
+        didSet { defaults.set(focusHeading, forKey: Key.focusHeading) }
+    }
 
     // MARK: Focus timers (pomodoro)
 
@@ -239,6 +249,8 @@ final class UserSettings: ObservableObject {
             Key.captureHeading: "## 📥 Capture",
             Key.captureTimestamp: true,
             Key.captureHotkeyEnabled: false,
+            Key.focusTrackingEnabled: true,
+            Key.focusHeading: "## ⏱️ Fokuszeit",
             Key.timerCountsUp: false,
             Key.timerAutoChain: false,
             Key.timerSoundEnabled: true,
@@ -248,7 +260,7 @@ final class UserSettings: ObservableObject {
         self.liveActivitiesEnabled = defaults.bool(forKey: Key.liveActivitiesEnabled)
         self.hudEnabled = defaults.bool(forKey: Key.hudEnabled)
         self.suppressSystemOSD = defaults.bool(forKey: Key.suppressSystemOSD)
-        self.spectrumStyle = SpectrumStyle(rawValue: defaults.string(forKey: Key.spectrumStyle) ?? "") ?? .solid
+        self.spectrumStyle = SpectrumStyle(rawValue: defaults.string(forKey: Key.spectrumStyle) ?? "") ?? .shades
         self.spectrumColorSource = SpectrumColorSource(rawValue: defaults.string(forKey: Key.spectrumColorSource) ?? "") ?? .cover
         self.spectrumColorA = Self.decodeColor(defaults.data(forKey: Key.spectrumColorA)) ?? .cyan
         self.spectrumColorB = Self.decodeColor(defaults.data(forKey: Key.spectrumColorB)) ?? .purple
@@ -260,6 +272,8 @@ final class UserSettings: ObservableObject {
         self.captureMode = CaptureMode(rawValue: defaults.string(forKey: Key.captureMode) ?? "") ?? .silentAppend
         self.captureTimestamp = defaults.bool(forKey: Key.captureTimestamp)
         self.captureHotkeyEnabled = defaults.bool(forKey: Key.captureHotkeyEnabled)
+        self.focusTrackingEnabled = defaults.bool(forKey: Key.focusTrackingEnabled)
+        self.focusHeading = defaults.string(forKey: Key.focusHeading) ?? "## ⏱️ Fokuszeit"
         self.timerPresets = Self.decodePresets(defaults.data(forKey: Key.timerPresets)) ?? TimerPreset.defaults
         self.timerCountsUp = defaults.bool(forKey: Key.timerCountsUp)
         self.timerAutoChain = defaults.bool(forKey: Key.timerAutoChain)

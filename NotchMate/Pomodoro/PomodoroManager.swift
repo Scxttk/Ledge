@@ -10,6 +10,10 @@ struct TimerPreset: Codable, Identifiable, Equatable {
     var id = UUID()
     var name: String
     var minutes: Int
+    /// Whether a completed/aborted run of this preset counts as concentrated
+    /// work and gets logged to the Obsidian daily note. Decoded presets saved
+    /// before this field existed default to `true` (see `init(from:)`).
+    var isFocus: Bool = true
 
     var duration: TimeInterval { TimeInterval(minutes) * 60 }
 
@@ -19,10 +23,27 @@ struct TimerPreset: Codable, Identifiable, Equatable {
         PomodoroManager.timeString(Int(duration), style: duration >= 3600 ? .hours : .minutes)
     }
 
+    init(id: UUID = UUID(), name: String, minutes: Int, isFocus: Bool = true) {
+        self.id = id
+        self.name = name
+        self.minutes = minutes
+        self.isFocus = isFocus
+    }
+
+    private enum CodingKeys: String, CodingKey { case id, name, minutes, isFocus }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        minutes = try container.decode(Int.self, forKey: .minutes)
+        isFocus = try container.decodeIfPresent(Bool.self, forKey: .isFocus) ?? true
+    }
+
     static let defaults: [TimerPreset] = [
-        TimerPreset(name: String(localized: "timer.preset.focus", defaultValue: "Fokus"), minutes: 25),
-        TimerPreset(name: String(localized: "timer.preset.shortBreak", defaultValue: "Kurze Pause"), minutes: 5),
-        TimerPreset(name: String(localized: "timer.preset.longBreak", defaultValue: "Lange Pause"), minutes: 15),
+        TimerPreset(name: String(localized: "timer.preset.focus", defaultValue: "Fokus"), minutes: 25, isFocus: true),
+        TimerPreset(name: String(localized: "timer.preset.shortBreak", defaultValue: "Kurze Pause"), minutes: 5, isFocus: false),
+        TimerPreset(name: String(localized: "timer.preset.longBreak", defaultValue: "Lange Pause"), minutes: 15, isFocus: false),
     ]
 }
 
@@ -61,6 +82,12 @@ final class PomodoroManager: ObservableObject {
     private var accumulated: TimeInterval = 0
     /// Start of the current run segment; nil while paused/idle.
     private var runStartedAt: Date?
+    /// Snapshot of `preset.isFocus` — like `activeName`, editing the preset in
+    /// Settings mid-run must not change whether this session gets logged.
+    private var activeIsFocus = false
+    /// Real wall-clock start of the session, unlike `runStartedAt` which goes
+    /// `nil` across a pause. Used only for the Obsidian focus-session log.
+    private var sessionStartedAt: Date?
 
     private let storeFile = "pomodoro.json"
 
@@ -94,6 +121,8 @@ final class PomodoroManager: ObservableObject {
         duration = preset.duration
         accumulated = 0
         runStartedAt = Date()
+        sessionStartedAt = runStartedAt
+        activeIsFocus = preset.isFocus
         selectedPresetID = preset.id
         withAnimation(NotchLayout.islandMorphAnimation) {
             activeName = preset.name
@@ -122,13 +151,21 @@ final class PomodoroManager: ObservableObject {
     }
 
     /// Abandon the session without completion side effects (no sound, no
-    /// banner, no chain).
+    /// banner, no chain) — but a focus preset still logs the time actually
+    /// spent, since an interrupted focus block is real concentrated work too.
     func reset() {
+        if phase != .idle { logSessionIfNeeded(endedAt: Date()) }
+        clearState()
+    }
+
+    private func clearState() {
         stopTimer()
         activePresetID = nil
         duration = 0
         accumulated = 0
         runStartedAt = nil
+        sessionStartedAt = nil
+        activeIsFocus = false
         withAnimation(NotchLayout.islandMorphAnimation) {
             phase = .idle
             activeName = nil
@@ -146,9 +183,10 @@ final class PomodoroManager: ObservableObject {
     }
 
     /// Settings → reset. The store file is already gone (`Persistence.resetAll`
-    /// wiped the directory); this drops the in-memory session.
+    /// wiped the directory); this drops the in-memory session without logging
+    /// a focus entry for it — a full data wipe isn't a real abandoned session.
     func clear() {
-        reset()
+        clearState()
     }
 
     // MARK: Lifecycle gates
@@ -208,6 +246,7 @@ final class PomodoroManager: ObservableObject {
 
     private func complete(notify: Bool = true) {
         stopTimer()
+        logSessionIfNeeded(endedAt: Date())
         let finishedID = activePresetID
         let name = activeName ?? ""
         if notify {
@@ -228,7 +267,9 @@ final class PomodoroManager: ObservableObject {
         if settings.timerAutoChain, let next = nextPreset(after: finishedID) {
             start(next)
         } else {
-            reset()
+            // Already logged above — clear state without logging again (unlike
+            // `reset()`, which logs for the abandon-mid-session call path).
+            clearState()
         }
     }
 
@@ -267,6 +308,25 @@ final class PomodoroManager: ObservableObject {
         }
     }
 
+    // MARK: Obsidian focus log
+
+    /// Log a completed or abandoned focus-preset session to the daily note.
+    /// No-op for non-focus presets, when tracking is off, or for runs under a
+    /// minute (avoids log spam from accidental starts). Failures (e.g. no
+    /// vault configured) are silent — this is a background side effect, not a
+    /// user-facing feature with its own error banner.
+    private func logSessionIfNeeded(endedAt: Date) {
+        guard activeIsFocus, settings.focusTrackingEnabled, let start = sessionStartedAt else { return }
+        let minutes = Int(elapsed / 60)
+        guard minutes >= 1 else { return }
+        do {
+            _ = try ObsidianVault().appendFocusSession(
+                name: activeName ?? "", start: start, minutes: minutes, settings: settings)
+        } catch {
+            NSLog("NotchMate: focus-session log failed: \(error)")
+        }
+    }
+
     // MARK: Persistence
 
     private struct StoredSession: Codable {
@@ -275,6 +335,32 @@ final class PomodoroManager: ObservableObject {
         var duration: TimeInterval
         var accumulated: TimeInterval
         var runStartedAt: Date?
+        var isFocus: Bool
+        var sessionStartedAt: Date?
+
+        init(presetID: UUID?, name: String, duration: TimeInterval, accumulated: TimeInterval,
+             runStartedAt: Date?, isFocus: Bool, sessionStartedAt: Date?) {
+            self.presetID = presetID
+            self.name = name
+            self.duration = duration
+            self.accumulated = accumulated
+            self.runStartedAt = runStartedAt
+            self.isFocus = isFocus
+            self.sessionStartedAt = sessionStartedAt
+        }
+
+        // Sessions persisted before `isFocus`/`sessionStartedAt` existed lack
+        // those keys entirely — default them instead of failing to decode.
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            presetID = try container.decodeIfPresent(UUID.self, forKey: .presetID)
+            name = try container.decode(String.self, forKey: .name)
+            duration = try container.decode(TimeInterval.self, forKey: .duration)
+            accumulated = try container.decode(TimeInterval.self, forKey: .accumulated)
+            runStartedAt = try container.decodeIfPresent(Date.self, forKey: .runStartedAt)
+            isFocus = try container.decodeIfPresent(Bool.self, forKey: .isFocus) ?? false
+            sessionStartedAt = try container.decodeIfPresent(Date.self, forKey: .sessionStartedAt)
+        }
     }
 
     /// Saved on every transition, not per tick — the wall-clock fields fully
@@ -286,7 +372,8 @@ final class PomodoroManager: ObservableObject {
         }
         Persistence.save(
             StoredSession(presetID: activePresetID, name: activeName ?? "",
-                          duration: duration, accumulated: accumulated, runStartedAt: runStartedAt),
+                          duration: duration, accumulated: accumulated, runStartedAt: runStartedAt,
+                          isFocus: activeIsFocus, sessionStartedAt: sessionStartedAt),
             to: storeFile
         )
     }
@@ -306,6 +393,8 @@ final class PomodoroManager: ObservableObject {
         accumulated = stored.accumulated
         runStartedAt = stored.runStartedAt
         activeName = stored.name
+        activeIsFocus = stored.isFocus
+        sessionStartedAt = stored.sessionStartedAt
         phase = stored.runStartedAt != nil ? .running : .paused
         selectedPresetID = stored.presetID
         refreshDisplay()

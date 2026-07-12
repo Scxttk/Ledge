@@ -16,6 +16,37 @@ struct ObsidianVault {
     /// `text`; for pre-formatted markdown (e.g. a `[title](url)` link) pass the
     /// content and `asLink == true` to skip the timestamp/escaping of the body.
     func append(text: String, asLink: Bool, settings: UserSettings) throws -> URL {
+        let (noteURL, root) = try resolveDailyNote(settings: settings)
+        let dateString = dailyFormatter(settings.dailyFormat).string(from: Date())
+
+        let bullet = formatBullet(text, asLink: asLink, settings: settings)
+        try insert(bullet: bullet, underHeading: settings.captureHeading, into: noteURL)
+
+        if settings.captureMode == .openInObsidian {
+            openInObsidian(folder: settings.dailyFolder, file: dateString, root: root, settings: settings)
+        }
+        return noteURL
+    }
+
+    /// Log a focus-preset timer session as a Dataview-friendly bullet under
+    /// `settings.focusHeading`, so daily concentrated-work time can be summed
+    /// with a `[minutes::]` query. `start` + `minutes` describe the run;
+    /// `minutes` is the actually elapsed time, not necessarily the preset's
+    /// full duration (an aborted session is logged with what really happened).
+    @discardableResult
+    func appendFocusSession(name: String, start: Date, minutes: Int, settings: UserSettings) throws -> URL {
+        let (noteURL, _) = try resolveDailyNote(settings: settings)
+        let end = start.addingTimeInterval(TimeInterval(minutes) * 60)
+        let bullet = "- \(Self.timeFormatter.string(from: start))–\(Self.timeFormatter.string(from: end)) "
+            + "\(CaptureEscaping.sanitizeLine(name)) (\(minutes) min) "
+            + "[start:: \(Self.isoFormatter.string(from: start))] [minutes:: \(minutes)]"
+        try insert(bullet: bullet, underHeading: settings.focusHeading, into: noteURL)
+        return noteURL
+    }
+
+    /// Resolve the vault root and today's daily-note path, checking the note
+    /// doesn't escape the vault. Shared by every writer in this type.
+    private func resolveDailyNote(settings: UserSettings) throws -> (note: URL, root: URL) {
         guard let bookmark = settings.vaultBookmark,
               let root = Persistence.resolveBookmark(bookmark) else {
             throw CaptureError.noVault
@@ -29,11 +60,14 @@ struct ObsidianVault {
         guard CaptureEscaping.isInside(noteURL, root: root) else {
             throw CaptureError.outsideVault
         }
+        return (noteURL, root)
+    }
 
-        let bullet = formatBullet(text, asLink: asLink, settings: settings)
+    /// Insert `bullet` under `heading` in the note at `noteURL`, creating
+    /// intermediate folders as needed.
+    private func insert(bullet: String, underHeading heading: String, into noteURL: URL) throws {
         let existing = (try? String(contentsOf: noteURL, encoding: .utf8)) ?? ""
-        let updated = Self.appending(bullet: bullet, underHeading: settings.captureHeading, to: existing)
-
+        let updated = Self.appending(bullet: bullet, underHeading: heading, to: existing)
         do {
             try FileManager.default.createDirectory(
                 at: noteURL.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -41,11 +75,6 @@ struct ObsidianVault {
         } catch {
             throw CaptureError.writeFailed(error)
         }
-
-        if settings.captureMode == .openInObsidian {
-            openInObsidian(folder: settings.dailyFolder, file: dateString, root: root, settings: settings)
-        }
-        return noteURL
     }
 
     /// Capture the frontmost browser tab as a markdown link.
@@ -126,6 +155,14 @@ struct ObsidianVault {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "HH:mm"
+        return formatter
+    }()
+
+    /// Dataview-parseable local timestamp for the `[start::]` inline field.
+    private static let isoFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd'T'HH:mm"
         return formatter
     }()
 

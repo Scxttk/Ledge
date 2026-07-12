@@ -13,8 +13,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let systemHUD = SystemHUD()
     /// Shared audio-spectrum tap. Long-lived (not owned by the music tab) so the
     /// collapsed pill's wave can show the real spectrum too; its lifecycle is
-    /// driven centrally in `NotchRootView` off playback + screen state.
-    let spectrum = SpectrumAnalyzer(bandCount: 5)
+    /// driven centrally in `NotchRootView` off screen state alone — it runs
+    /// whenever the screen is awake, and `spectrum.hasSignal` (derived from the
+    /// tapped audio itself) reports whether anything is actually audible.
+    let spectrum = SpectrumAnalyzer(bandCount: 6)
     lazy var capture = ObsidianCapture(activities: activities)
     lazy var pomodoro = PomodoroManager(activities: activities)
 

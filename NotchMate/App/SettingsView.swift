@@ -147,6 +147,10 @@ private struct TimerSettings: View {
                         )
                         .labelsHidden()
                         Spacer(minLength: 0)
+                        Toggle(String(localized: "settings.timer.isFocus", defaultValue: "Fokuszeit"), isOn: $preset.isFocus)
+                            .toggleStyle(.checkbox)
+                            .labelsHidden()
+                            .help(String(localized: "settings.timer.isFocusHint", defaultValue: "Zählt als Fokuszeit"))
                         Stepper(value: $preset.minutes, in: 1...180) {
                             Text(String(localized: "settings.timer.minutes", defaultValue: "\(preset.minutes) min"))
                                 .monospacedDigit()
@@ -173,7 +177,7 @@ private struct TimerSettings: View {
             } header: {
                 Text(String(localized: "settings.timer.presets", defaultValue: "Voreinstellungen"))
             } footer: {
-                Text(String(localized: "settings.timer.chainHint", defaultValue: "Die Reihenfolge der Liste bestimmt die Kette beim automatischen Fortsetzen."))
+                Text(String(localized: "settings.timer.chainHint", defaultValue: "Die Reihenfolge der Liste bestimmt die Kette beim automatischen Fortsetzen. Die Checkbox markiert Presets, deren Sitzungen als Fokuszeit ins Obsidian-Daily geloggt werden."))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -220,6 +224,7 @@ private struct ObsidianSettings: View {
                 TextField(String(localized: "settings.obsidian.dailyFolder", defaultValue: "Daily-Ordner"), text: $settings.dailyFolder)
                 TextField(String(localized: "settings.obsidian.dailyFormat", defaultValue: "Datumsformat"), text: $settings.dailyFormat)
                 TextField(String(localized: "settings.obsidian.heading", defaultValue: "Capture-Überschrift"), text: $settings.captureHeading)
+                TextField(String(localized: "settings.obsidian.focusHeading", defaultValue: "Fokuszeit-Überschrift"), text: $settings.focusHeading)
             } header: {
                 Text(String(localized: "settings.obsidian.target", defaultValue: "Ziel"))
             }
@@ -232,6 +237,7 @@ private struct ObsidianSettings: View {
                 }
                 Toggle(String(localized: "settings.obsidian.timestamp", defaultValue: "Zeitstempel voranstellen"), isOn: $settings.captureTimestamp)
                 Toggle(String(localized: "settings.obsidian.hotkey", defaultValue: "Globaler Hotkey (⌥⌘Space)"), isOn: $settings.captureHotkeyEnabled)
+                Toggle(String(localized: "settings.obsidian.focusTracking", defaultValue: "Fokuszeit-Presets ins Daily loggen"), isOn: $settings.focusTrackingEnabled)
             } header: {
                 Text(String(localized: "settings.obsidian.behavior", defaultValue: "Verhalten"))
             }
