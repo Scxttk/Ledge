@@ -24,6 +24,7 @@ enum ArtworkColor {
     private static let context = CIContext(options: [.workingColorSpace: NSNull()])
     private static var cache: [URL: Color] = [:]
     private static var iconCache: [String: Color] = [:]
+    private static var simplifiedCache: [URL: NSImage] = [:]
 
     /// Loads `url` off the main thread and calls back on the main thread with a
     /// tint, or nil if it couldn't be derived. Results are cached per URL.
@@ -58,6 +59,43 @@ enum ArtworkColor {
                 completion(color)
             }
         }
+    }
+
+    /// A heavily-simplified version of the cover for the `.coverImage` spectrum
+    /// style: downscaled to a tiny grid so only the artwork's main colour
+    /// regions survive, with a soft gradient between them once SwiftUI scales
+    /// it back up smoothly. The spectrum bars mask this image 1:1 — left bar =
+    /// left side of the cover — the way the iPhone's Dynamic Island wave does.
+    static func fetchSimplified(from url: URL, completion: @escaping (NSImage?) -> Void) {
+        if let cached = simplifiedCache[url] {
+            completion(cached)
+            return
+        }
+        DispatchQueue.global(qos: .utility).async {
+            let image = data(for: url).flatMap(simplifiedImage(from:))
+            DispatchQueue.main.async {
+                if let image { simplifiedCache[url] = image }
+                completion(image)
+            }
+        }
+    }
+
+    /// Downscale to a tiny square so only the dominant colour regions remain.
+    private static func simplifiedImage(from data: Data) -> NSImage? {
+        guard let image = CIImage(data: data) else { return nil }
+        let extent = image.extent
+        guard extent.width > 0, extent.height > 0 else { return nil }
+
+        let side: CGFloat = 5
+        let scale = side / max(extent.width, extent.height)
+        guard let scaleFilter = CIFilter(name: "CILanczosScaleTransform", parameters: [
+            kCIInputImageKey: image,
+            kCIInputScaleKey: scale,
+            kCIInputAspectRatioKey: 1.0,
+        ]), let scaled = scaleFilter.outputImage else { return nil }
+
+        guard let cg = context.createCGImage(scaled, from: scaled.extent) else { return nil }
+        return NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
     }
 
     private static func data(for url: URL) -> Data? {

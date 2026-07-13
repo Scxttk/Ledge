@@ -53,6 +53,7 @@ final class UserSettings: ObservableObject {
         case shades
         case alternating
         case gradient
+        case coverImage
 
         var id: String { rawValue }
 
@@ -62,6 +63,7 @@ final class UserSettings: ObservableObject {
             case .shades: return String(localized: "spectrum.style.shades", defaultValue: "Schattierungen")
             case .alternating: return String(localized: "spectrum.style.alternating", defaultValue: "Alternierend")
             case .gradient: return String(localized: "spectrum.style.gradient", defaultValue: "Verlauf")
+            case .coverImage: return String(localized: "spectrum.style.coverImage", defaultValue: "Cover")
             }
         }
 
@@ -70,7 +72,7 @@ final class UserSettings: ObservableObject {
         /// colour-source and accent pickers are irrelevant for them.
         var usesAccentPair: Bool {
             switch self {
-            case .solid, .shades: return false
+            case .solid, .shades, .coverImage: return false
             case .alternating, .gradient: return true
             }
         }

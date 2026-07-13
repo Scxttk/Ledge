@@ -532,6 +532,8 @@ private struct CollapsedView: View {
                 WaveBarsView(
                     isActive: nowPlaying.screensAwake,
                     tint: waveTint,
+                    coverImage: nowPlaying.isPlaying && nowPlaying.track?.artworkURL != nil
+                        ? nowPlaying.simplifiedArtwork : nil,
                     bands: spectrum.isLive ? spectrum.bands : nil,
                     count: NotchLayout.collapsedWaveBarCount,
                     maxHeight: NotchLayout.collapsedWaveMaxHeight,

@@ -20,6 +20,9 @@ final class NowPlayingManager: ObservableObject {
     /// Accent colour derived from the current cover, tinting the wave visualizer.
     /// nil when there's no artwork (e.g. Apple Music) — the wave falls back to blue.
     @Published private(set) var artworkColor: Color?
+    /// Tiny-grid simplification of the current cover for the `.coverImage`
+    /// spectrum style (the bars mask this image); nil when there's no artwork.
+    @Published private(set) var simplifiedArtwork: NSImage?
     /// The artwork URL the current `artworkColor` was computed for, so we only
     /// recompute when the cover actually changes.
     private var artworkColorURL: URL?
@@ -185,11 +188,19 @@ final class NowPlayingManager: ObservableObject {
     private func refreshArtworkColor(for url: URL?) {
         guard url != artworkColorURL else { return }
         artworkColorURL = url
-        guard let url else { artworkColor = nil; return }
+        guard let url else {
+            artworkColor = nil
+            simplifiedArtwork = nil
+            return
+        }
         ArtworkColor.fetch(from: url) { [weak self] color in
             // Ignore a late result for a cover we've already moved on from.
             guard let self, self.artworkColorURL == url else { return }
             self.artworkColor = color
+        }
+        ArtworkColor.fetchSimplified(from: url) { [weak self] image in
+            guard let self, self.artworkColorURL == url else { return }
+            self.simplifiedArtwork = image
         }
     }
 

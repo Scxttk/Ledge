@@ -88,6 +88,7 @@ struct NowPlayingView: View {
             WaveBarsView(
                 isActive: nowPlaying.isPlaying && nowPlaying.screensAwake,
                 tint: nowPlaying.track != nil ? nowPlaying.artworkColor : nil,
+                coverImage: nowPlaying.track != nil ? nowPlaying.simplifiedArtwork : nil,
                 bands: (nowPlaying.isPlaying && spectrum.isLive) ? spectrum.bands : nil,
                 count: 6
             )
@@ -302,6 +303,10 @@ private struct ControlButton: View {
 struct WaveBarsView: View {
     var isActive: Bool
     var tint: Color?
+    /// Simplified cover (see `ArtworkColor.fetchSimplified`) for the
+    /// `.coverImage` style: laid 1:1 behind the whole spectrum and revealed by
+    /// the bars as a mask. nil → the style falls back to `.solid` behaviour.
+    var coverImage: NSImage? = nil
     /// Live per-band magnitudes (0…1). nil/empty → procedural fallback.
     var bands: [CGFloat]? = nil
     var count: Int = 4
@@ -335,7 +340,9 @@ struct WaveBarsView: View {
     // impossible to actually see. Now returns one solid colour per bar.
     private func barColor(forBarAt index: Int, total: Int) -> Color {
         switch settings.spectrumStyle {
-        case .solid:
+        case .solid, .coverImage:
+            // `.coverImage` only lands here as the no-artwork fallback (with a
+            // cover, the bars are a mask and their colour is irrelevant).
             // No tint (no artwork, or the cover's dominant-colour extraction
             // found no real hue) — default to white rather than a hardcoded
             // accent, matching `ArtworkColor`'s own "no real colour here" answer.
@@ -381,7 +388,30 @@ struct WaveBarsView: View {
         }
     }
 
+    /// Total width the bars span — the simplified cover is sized to exactly
+    /// this rect so bar position maps 1:1 onto cover position.
+    private var totalWidth: CGFloat {
+        CGFloat(count) * barWidth + CGFloat(max(0, count - 1)) * spacing
+    }
+
     var body: some View {
+        if settings.spectrumStyle == .coverImage, let coverImage {
+            // iPhone-style: the bars don't have colours of their own — they
+            // mask the simplified cover, so a peaking bar reveals colours of
+            // its cover column that a low bar keeps hidden.
+            Image(nsImage: coverImage)
+                .resizable()
+                .interpolation(.medium)
+                .frame(width: totalWidth, height: maxHeight)
+                .mask(barsContent)
+                .frame(maxHeight: .infinity, alignment: .center)
+        } else {
+            barsContent
+        }
+    }
+
+    @ViewBuilder
+    private var barsContent: some View {
         if let bands, !bands.isEmpty {
             // Real spectrum: bar height follows each band; the analyzer already
             // smooths, a short animation just eases between UI updates.
