@@ -234,12 +234,19 @@ final class NotchWindowController {
     /// while the cursor was merely inside the *expanded* footprint rather than
     /// over the small visible pill. A global + local mouse-moved monitor is
     /// deterministic: we only expand when the cursor is genuinely over the pill.
+    /// `.leftMouseDragged` is monitored alongside `.mouseMoved` because a
+    /// file drag emits *only* dragged events — without it, the click-through
+    /// gate (`panel.ignoresMouseEvents`) keeps whatever value it had before
+    /// the drag started, and an ignoring panel is skipped by AppKit's drag-
+    /// destination routing entirely, so the shelf never sees the drag. During
+    /// a drag we only refresh the gate; expanding stays with
+    /// `handleDragEntered`, which fires solely for registered file drags.
     private func installHoverMonitor() {
-        hoverMonitorGlobal = NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved]) { [weak self] _ in
-            self?.evaluateHover()
+        hoverMonitorGlobal = NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved, .leftMouseDragged]) { [weak self] event in
+            self?.evaluateHover(isDrag: event.type == .leftMouseDragged)
         }
-        hoverMonitorLocal = NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved]) { [weak self] event in
-            self?.evaluateHover()
+        hoverMonitorLocal = NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved, .leftMouseDragged]) { [weak self] event in
+            self?.evaluateHover(isDrag: event.type == .leftMouseDragged)
             return event
         }
     }
@@ -341,7 +348,7 @@ final class NotchWindowController {
         }
     }
 
-    private func evaluateHover() {
+    private func evaluateHover(isDrag: Bool = false) {
         guard !menuBarOverlapActive else { return }
         let cursor = NSEvent.mouseLocation
         if let last = lastEvaluatedCursor, abs(last.x - cursor.x) < 1, abs(last.y - cursor.y) < 1 {
@@ -350,6 +357,13 @@ final class NotchWindowController {
         lastEvaluatedCursor = cursor
         followCursorScreenIfNeeded()
         updateClickThrough()
+
+        // Mid-drag, only the click-through gate matters (so the panel becomes
+        // a valid drag destination). Hover expand/collapse must not run: a
+        // text-selection drag over the pill shouldn't open the notch, and the
+        // "cursor outside → collapse" branch would fight the drag-entered
+        // expansion while a file hovers over the open shelf.
+        if isDrag { return }
 
         // Only the resting `.expanded` state gets the big hover rect. Every
         // other state — including `.band`/`.solo`, which still render fairly
