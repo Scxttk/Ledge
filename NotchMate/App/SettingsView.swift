@@ -126,6 +126,7 @@ private struct FeatureSettings: View {
             Toggle(String(localized: "settings.hud", defaultValue: "HUD-Ersatz (Lautstärke/Helligkeit)"), isOn: $settings.hudEnabled)
             Toggle(String(localized: "settings.suppressOSD", defaultValue: "Lautstärke & Helligkeit nur in der Notch (Bedienungshilfen nötig)"), isOn: $settings.suppressSystemOSD)
                 .disabled(!settings.hudEnabled)
+            Toggle(String(localized: "settings.claudeTab", defaultValue: "Claude-Tab (Usage & Schaltung)"), isOn: $settings.claudeTabEnabled)
         }
         .formStyle(.grouped)
         .padding()

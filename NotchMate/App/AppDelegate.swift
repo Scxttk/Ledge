@@ -19,13 +19,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let spectrum = SpectrumAnalyzer(bandCount: 6)
     lazy var capture = ObsidianCapture(activities: activities)
     lazy var pomodoro = PomodoroManager(activities: activities)
+    /// Claude tab: usage windows (fetched on demand, no background polling)
+    /// and the gear shifter driving the Claude desktop app.
+    let claudeUsage = ClaudeUsageModel()
+    let claudeDriver = ClaudeSessionDriver()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Accessory app: no Dock icon, lives in the menu bar / notch.
         NSApp.setActivationPolicy(.accessory)
         applyAppearance(UserSettings.shared.appearance)
 
-        let controller = NotchWindowController(viewModel: viewModel, nowPlaying: nowPlaying, shelf: shelf, activities: activities, pomodoro: pomodoro, capture: capture, spectrum: spectrum)
+        let controller = NotchWindowController(viewModel: viewModel, nowPlaying: nowPlaying, shelf: shelf, activities: activities, pomodoro: pomodoro, capture: capture, spectrum: spectrum, claudeUsage: claudeUsage, claudeDriver: claudeDriver)
         controller.show()
         windowController = controller
 

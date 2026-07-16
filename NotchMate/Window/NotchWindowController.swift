@@ -64,7 +64,7 @@ final class NotchWindowController {
     /// (trackpad momentum keeps firing events; we only act on a fresh gesture).
     private var lastHorizontalScroll = Date.distantPast
 
-    init(viewModel: NotchViewModel, nowPlaying: NowPlayingManager, shelf: FileShelfModel, activities: ActivityManager, pomodoro: PomodoroManager, capture: ObsidianCapture, spectrum: SpectrumAnalyzer) {
+    init(viewModel: NotchViewModel, nowPlaying: NowPlayingManager, shelf: FileShelfModel, activities: ActivityManager, pomodoro: PomodoroManager, capture: ObsidianCapture, spectrum: SpectrumAnalyzer, claudeUsage: ClaudeUsageModel, claudeDriver: ClaudeSessionDriver) {
         self.viewModel = viewModel
         self.nowPlaying = nowPlaying
         self.shelf = shelf
@@ -74,7 +74,7 @@ final class NotchWindowController {
         let frame = NSRect(x: 0, y: 0, width: viewModel.panelWidth, height: viewModel.panelHeight)
         panel = NotchPanel(contentRect: frame)
 
-        let root = NotchRootView(viewModel: viewModel, nowPlaying: nowPlaying, shelf: shelf, activities: activities, pomodoro: pomodoro, capture: capture, spectrum: spectrum)
+        let root = NotchRootView(viewModel: viewModel, nowPlaying: nowPlaying, shelf: shelf, activities: activities, pomodoro: pomodoro, capture: capture, spectrum: spectrum, claudeUsage: claudeUsage, claudeDriver: claudeDriver)
         let hostingView = NSHostingView(rootView: root)
         hostingView.translatesAutoresizingMaskIntoConstraints = false
 
@@ -521,7 +521,7 @@ final class NotchWindowController {
     /// Move the tab selection one step, clamped to the ends (no wrap-around).
     /// `next` advances toward `.capture`; `!next` toward `.music`.
     private func pageTab(next: Bool) {
-        let tabs = NotchViewModel.Tab.allCases
+        let tabs = NotchViewModel.enabledTabs
         guard let index = tabs.firstIndex(of: viewModel.selectedTab) else { return }
         let target = index + (next ? 1 : -1)
         guard tabs.indices.contains(target) else { return }

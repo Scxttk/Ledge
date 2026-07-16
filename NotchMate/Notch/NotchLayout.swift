@@ -252,4 +252,43 @@ enum NotchLayout {
     /// while the island morph (spring response 0.42) or the tab carousel spring
     /// (response 0.38) is still moving — a SwiftUI placeholder stands in until then.
     static let captureFieldMountDelay: TimeInterval = 0.45
+
+    // MARK: Claude tab (usage + shifter)
+
+    /// Gap between the usage column and the shifter block.
+    static let claudeColumnSpacing: CGFloat = 18
+    static let claudeUsageRowSpacing: CGFloat = 7
+    static let claudeUsageBarHeight: CGFloat = 5
+    /// Horizontal distance between two model lanes of the shift gate.
+    static let claudeShifterLaneSpacing: CGFloat = 34
+    /// Vertical distance between two effort rows (low → medium → high).
+    static let claudeShifterRowSpacing: CGFloat = 36
+    /// Inset from the gate plate's edge to the outermost slot endpoints —
+    /// keeps the knob fully inside the plate at the end gates.
+    static let claudeShifterPadding: CGFloat = 13
+    /// Visual thickness of the milled slots the knob travels in.
+    static let claudeShifterSlotWidth: CGFloat = 10
+    static let claudeShifterKnobSize: CGFloat = 20
+    /// Gap between the gearbox and the mode button below it.
+    static let claudeShifterModeSpacing: CGFloat = 6
+    /// AppleScript `delay` (seconds) between activating Claude.app and typing —
+    /// the window needs a beat to take key focus or the first chars get eaten.
+    static let claudeKeystrokeActivateDelay: Double = 0.4
+    /// AppleScript `delay` between the `/model` and `/effort` commands, so the
+    /// first command is accepted before the second starts typing. Generous:
+    /// at 0.6 the `/effort` half was intermittently swallowed while the app
+    /// still rendered the model-switch confirmation.
+    static let claudeKeystrokeCommandDelay: Double = 1.2
+    /// AppleScript `delay` between typing a slash command and pressing return —
+    /// the command popup needs a beat, or the return gets swallowed and the
+    /// command stays as plain text in the composer.
+    static let claudeKeystrokeReturnDelay: Double = 0.25
+    /// Distance (pt) above the Claude window's bottom edge where the focus
+    /// click lands — mid-composer, clear of the window edge and send button.
+    static let claudeComposerBottomOffset: Int = 60
+    /// AppleScript `delay` between the composer click and typing. Empirically
+    /// ≥1.2s: the Electron webview takes well over half a second to route the
+    /// click focus; at 0.5s the whole command evaporated (worked at the ~2s
+    /// the old focus-poll loop accidentally provided).
+    static let claudeComposerClickDelay: Double = 1.2
 }

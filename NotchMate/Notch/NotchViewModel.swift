@@ -6,6 +6,7 @@ final class NotchViewModel: ObservableObject {
         case files
         case capture
         case timer
+        case claude
     }
 
     /// The island's visual state. Collapsing is staged (iPhone-style):
@@ -46,6 +47,14 @@ final class NotchViewModel: ObservableObject {
     var occupiesExpandedFootprint: Bool { islandState != .collapsed }
 
     @Published var selectedTab: Tab = .music
+
+    /// The tabs actually offered — the Claude tab can be switched off in
+    /// Settings. Used by the tab bar and the swipe pager; the carousel itself
+    /// keeps all pages mounted (indices stay stable, the page is just
+    /// unreachable while disabled).
+    static var enabledTabs: [Tab] {
+        UserSettings.shared.claudeTabEnabled ? Tab.allCases : Tab.allCases.filter { $0 != .claude }
+    }
 
     /// While true (e.g. the capture field is focused) the island won't auto-
     /// collapse when the cursor leaves it — otherwise typing would dismiss it.
@@ -109,6 +118,7 @@ final class NotchViewModel: ObservableObject {
         case .files:   title = String(localized: "tab.files", defaultValue: "Ablage")
         case .capture: title = String(localized: "tab.capture", defaultValue: "Capture")
         case .timer:   title = String(localized: "tab.timer", defaultValue: "Timer")
+        case .claude:  title = String(localized: "tab.claude", defaultValue: "Claude")
         }
         let labelWidth = CGFloat(title.count) * NotchLayout.soloLabelCharWidth
         return NotchLayout.soloBaseWidth + 2 * labelWidth

@@ -9,6 +9,8 @@ struct NotchRootView: View {
     @ObservedObject var pomodoro: PomodoroManager
     @ObservedObject var capture: ObsidianCapture
     @ObservedObject var spectrum: SpectrumAnalyzer
+    @ObservedObject var claudeUsage: ClaudeUsageModel
+    @ObservedObject var claudeDriver: ClaudeSessionDriver
 
     /// Run the audio tap whenever the screen is on, regardless of whether
     /// anything is playing — `spectrum.hasSignal` (derived from the tapped
@@ -145,7 +147,7 @@ struct NotchRootView: View {
                 // tabs, then labels), so nothing ever re-appears. By the time
                 // it unmounts only the selected icon is left — pixel-identical
                 // to the pill icon replacing it (idle case).
-                ExpandedView(viewModel: viewModel, nowPlaying: nowPlaying, shelf: shelf, pomodoro: pomodoro, capture: capture, spectrum: spectrum)
+                ExpandedView(viewModel: viewModel, nowPlaying: nowPlaying, shelf: shelf, pomodoro: pomodoro, capture: capture, spectrum: spectrum, claudeUsage: claudeUsage, claudeDriver: claudeDriver)
                     .transition(handover)
             }
             if state == .collapsed || pillHero {
@@ -287,6 +289,8 @@ private struct ExpandedView: View {
     @ObservedObject var pomodoro: PomodoroManager
     @ObservedObject var capture: ObsidianCapture
     @ObservedObject var spectrum: SpectrumAnalyzer
+    @ObservedObject var claudeUsage: ClaudeUsageModel
+    @ObservedObject var claudeDriver: ClaudeSessionDriver
 
     private var pageIndex: Int {
         NotchViewModel.Tab.allCases.firstIndex(of: viewModel.selectedTab) ?? 0
@@ -331,6 +335,7 @@ private struct ExpandedView: View {
                         page(.files, in: geo.size) { ShelfView(shelf: shelf) }
                         page(.capture, in: geo.size) { CaptureView(capture: capture, viewModel: viewModel) }
                         page(.timer, in: geo.size) { PomodoroView(pomodoro: pomodoro) }
+                        page(.claude, in: geo.size) { ClaudeTabView(usage: claudeUsage, driver: claudeDriver, isFront: viewModel.selectedTab == .claude) }
                     }
                     .offset(x: -CGFloat(pageIndex) * geo.size.width)
                 }
@@ -376,6 +381,9 @@ private struct NotchTabBar: View {
             tab(title: String(localized: "tab.files", defaultValue: "Ablage"), icon: "tray.full", value: .files)
             tab(title: String(localized: "tab.capture", defaultValue: "Capture"), icon: "square.and.pencil", value: .capture)
             tab(title: String(localized: "tab.timer", defaultValue: "Timer"), icon: "timer", value: .timer)
+            if NotchViewModel.enabledTabs.contains(.claude) {
+                tab(title: String(localized: "tab.claude", defaultValue: "Claude"), icon: "steeringwheel", value: .claude)
+            }
         }
     }
 
@@ -455,6 +463,7 @@ private struct CollapsedView: View {
         case .files: return "tray.full"
         case .capture: return "square.and.pencil"
         case .timer: return "timer"
+        case .claude: return "steeringwheel"
         }
     }
 

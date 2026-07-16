@@ -141,6 +141,8 @@ final class UserSettings: ObservableObject {
         static let timerCountsUp = "timerCountsUp"
         static let timerAutoChain = "timerAutoChain"
         static let timerSoundEnabled = "timerSoundEnabled"
+        // Claude tab
+        static let claudeTabEnabled = "claudeTabEnabled"
     }
 
     private let defaults: UserDefaults
@@ -240,6 +242,13 @@ final class UserSettings: ObservableObject {
         didSet { defaults.set(timerSoundEnabled, forKey: Key.timerSoundEnabled) }
     }
 
+    // MARK: Claude tab
+
+    /// Show the Claude tab (usage limits + model/effort shifter) in the notch.
+    @Published var claudeTabEnabled: Bool {
+        didSet { defaults.set(claudeTabEnabled, forKey: Key.claudeTabEnabled) }
+    }
+
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         defaults.register(defaults: [
@@ -256,6 +265,7 @@ final class UserSettings: ObservableObject {
             Key.timerCountsUp: false,
             Key.timerAutoChain: false,
             Key.timerSoundEnabled: true,
+            Key.claudeTabEnabled: true,
         ])
         self.mediaSource = MediaSource(rawValue: defaults.string(forKey: Key.mediaSource) ?? "") ?? .auto
         self.appearance = Appearance(rawValue: defaults.string(forKey: Key.appearance) ?? "") ?? .system
@@ -280,6 +290,7 @@ final class UserSettings: ObservableObject {
         self.timerCountsUp = defaults.bool(forKey: Key.timerCountsUp)
         self.timerAutoChain = defaults.bool(forKey: Key.timerAutoChain)
         self.timerSoundEnabled = defaults.bool(forKey: Key.timerSoundEnabled)
+        self.claudeTabEnabled = defaults.bool(forKey: Key.claudeTabEnabled)
     }
 
     private static func encodeColor(_ color: Color) -> Data? {
