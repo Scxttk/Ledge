@@ -141,7 +141,11 @@ final class UserSettings: ObservableObject {
         static let timerCountsUp = "timerCountsUp"
         static let timerAutoChain = "timerAutoChain"
         static let timerSoundEnabled = "timerSoundEnabled"
-        // Claude tab
+        // Tab visibility (claudeTabEnabled predates the others — keep its key)
+        static let musicTabEnabled = "musicTabEnabled"
+        static let filesTabEnabled = "filesTabEnabled"
+        static let captureTabEnabled = "captureTabEnabled"
+        static let timerTabEnabled = "timerTabEnabled"
         static let claudeTabEnabled = "claudeTabEnabled"
     }
 
@@ -242,11 +246,44 @@ final class UserSettings: ObservableObject {
         didSet { defaults.set(timerSoundEnabled, forKey: Key.timerSoundEnabled) }
     }
 
-    // MARK: Claude tab
+    // MARK: Tab visibility
 
-    /// Show the Claude tab (usage limits + model/effort shifter) in the notch.
+    /// Per-tab visibility switches. `NotchViewModel.enabledTabs` filters on
+    /// these; the Settings UI keeps at least one of them on.
+    @Published var musicTabEnabled: Bool {
+        didSet { defaults.set(musicTabEnabled, forKey: Key.musicTabEnabled) }
+    }
+    @Published var filesTabEnabled: Bool {
+        didSet { defaults.set(filesTabEnabled, forKey: Key.filesTabEnabled) }
+    }
+    @Published var captureTabEnabled: Bool {
+        didSet { defaults.set(captureTabEnabled, forKey: Key.captureTabEnabled) }
+    }
+    @Published var timerTabEnabled: Bool {
+        didSet { defaults.set(timerTabEnabled, forKey: Key.timerTabEnabled) }
+    }
     @Published var claudeTabEnabled: Bool {
         didSet { defaults.set(claudeTabEnabled, forKey: Key.claudeTabEnabled) }
+    }
+
+    func isTabEnabled(_ tab: NotchViewModel.Tab) -> Bool {
+        switch tab {
+        case .music: return musicTabEnabled
+        case .files: return filesTabEnabled
+        case .capture: return captureTabEnabled
+        case .timer: return timerTabEnabled
+        case .claude: return claudeTabEnabled
+        }
+    }
+
+    func setTab(_ tab: NotchViewModel.Tab, enabled: Bool) {
+        switch tab {
+        case .music: musicTabEnabled = enabled
+        case .files: filesTabEnabled = enabled
+        case .capture: captureTabEnabled = enabled
+        case .timer: timerTabEnabled = enabled
+        case .claude: claudeTabEnabled = enabled
+        }
     }
 
     init(defaults: UserDefaults = .standard) {
@@ -265,6 +302,10 @@ final class UserSettings: ObservableObject {
             Key.timerCountsUp: false,
             Key.timerAutoChain: false,
             Key.timerSoundEnabled: true,
+            Key.musicTabEnabled: true,
+            Key.filesTabEnabled: true,
+            Key.captureTabEnabled: true,
+            Key.timerTabEnabled: true,
             Key.claudeTabEnabled: true,
         ])
         self.mediaSource = MediaSource(rawValue: defaults.string(forKey: Key.mediaSource) ?? "") ?? .auto
@@ -290,6 +331,10 @@ final class UserSettings: ObservableObject {
         self.timerCountsUp = defaults.bool(forKey: Key.timerCountsUp)
         self.timerAutoChain = defaults.bool(forKey: Key.timerAutoChain)
         self.timerSoundEnabled = defaults.bool(forKey: Key.timerSoundEnabled)
+        self.musicTabEnabled = defaults.bool(forKey: Key.musicTabEnabled)
+        self.filesTabEnabled = defaults.bool(forKey: Key.filesTabEnabled)
+        self.captureTabEnabled = defaults.bool(forKey: Key.captureTabEnabled)
+        self.timerTabEnabled = defaults.bool(forKey: Key.timerTabEnabled)
         self.claudeTabEnabled = defaults.bool(forKey: Key.claudeTabEnabled)
     }
 

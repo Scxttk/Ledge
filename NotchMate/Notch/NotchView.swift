@@ -374,15 +374,13 @@ private struct NotchTabBar: View {
     let showsAllTabs: Bool
     /// When false (`.condensing`), the labels drop and only the icon remains.
     let showsLabels: Bool
+    /// Observed so the bar re-renders live when tabs are toggled in Settings.
+    @ObservedObject private var settings = UserSettings.shared
 
     var body: some View {
         HStack(spacing: NotchLayout.tabBarSpacing) {
-            tab(title: String(localized: "tab.music", defaultValue: "Musik"), icon: "music.note", value: .music)
-            tab(title: String(localized: "tab.files", defaultValue: "Ablage"), icon: "tray.full", value: .files)
-            tab(title: String(localized: "tab.capture", defaultValue: "Capture"), icon: "square.and.pencil", value: .capture)
-            tab(title: String(localized: "tab.timer", defaultValue: "Timer"), icon: "timer", value: .timer)
-            if NotchViewModel.enabledTabs.contains(.claude) {
-                tab(title: String(localized: "tab.claude", defaultValue: "Claude"), icon: "steeringwheel", value: .claude)
+            ForEach(NotchViewModel.enabledTabs, id: \.self) { value in
+                tab(title: value.title, icon: value.icon, value: value)
             }
         }
     }
@@ -457,15 +455,7 @@ private struct CollapsedView: View {
 
     /// Idle glyph reflects the tab you'd return to, so it isn't always the music
     /// note when you last used another tab.
-    private var idleIcon: String {
-        switch viewModel.selectedTab {
-        case .music: return "music.note"
-        case .files: return "tray.full"
-        case .capture: return "square.and.pencil"
-        case .timer: return "timer"
-        case .claude: return "steeringwheel"
-        }
-    }
+    private var idleIcon: String { viewModel.selectedTab.icon }
 
     /// The accent to tint the wave with: the real track's accent when we're
     /// actually showing that track's cover, else the source app icon's accent

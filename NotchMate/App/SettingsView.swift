@@ -126,10 +126,31 @@ private struct FeatureSettings: View {
             Toggle(String(localized: "settings.hud", defaultValue: "HUD-Ersatz (Lautstärke/Helligkeit)"), isOn: $settings.hudEnabled)
             Toggle(String(localized: "settings.suppressOSD", defaultValue: "Lautstärke & Helligkeit nur in der Notch (Bedienungshilfen nötig)"), isOn: $settings.suppressSystemOSD)
                 .disabled(!settings.hudEnabled)
-            Toggle(String(localized: "settings.claudeTab", defaultValue: "Claude-Tab (Usage & Schaltung)"), isOn: $settings.claudeTabEnabled)
+
+            Section {
+                ForEach(NotchViewModel.Tab.allCases, id: \.self) { tab in
+                    Toggle(tab.title, isOn: tabBinding(tab))
+                        // The last enabled tab can't be switched off — the
+                        // notch always needs at least one page.
+                        .disabled(settings.isTabEnabled(tab) && NotchViewModel.enabledTabs.count == 1)
+                }
+            } header: {
+                Text(String(localized: "settings.tabs.header", defaultValue: "Tabs"))
+            } footer: {
+                Text(String(localized: "settings.tabs.hint", defaultValue: "Deaktivierte Tabs verschwinden aus der Notch. Mindestens ein Tab bleibt immer aktiv."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
         .formStyle(.grouped)
         .padding()
+    }
+
+    private func tabBinding(_ tab: NotchViewModel.Tab) -> Binding<Bool> {
+        Binding(
+            get: { settings.isTabEnabled(tab) },
+            set: { settings.setTab(tab, enabled: $0) }
+        )
     }
 }
 

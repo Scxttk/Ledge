@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 
 final class NotchViewModel: ObservableObject {
@@ -7,6 +8,26 @@ final class NotchViewModel: ObservableObject {
         case capture
         case timer
         case claude
+
+        var title: String {
+            switch self {
+            case .music:   return String(localized: "tab.music", defaultValue: "Musik")
+            case .files:   return String(localized: "tab.files", defaultValue: "Ablage")
+            case .capture: return String(localized: "tab.capture", defaultValue: "Capture")
+            case .timer:   return String(localized: "tab.timer", defaultValue: "Timer")
+            case .claude:  return String(localized: "tab.claude", defaultValue: "Claude")
+            }
+        }
+
+        var icon: String {
+            switch self {
+            case .music:   return "music.note"
+            case .files:   return "tray.full"
+            case .capture: return "square.and.pencil"
+            case .timer:   return "timer"
+            case .claude:  return "steeringwheel"
+            }
+        }
     }
 
     /// The island's visual state. Collapsing is staged (iPhone-style):
@@ -48,12 +69,31 @@ final class NotchViewModel: ObservableObject {
 
     @Published var selectedTab: Tab = .music
 
-    /// The tabs actually offered — the Claude tab can be switched off in
-    /// Settings. Used by the tab bar and the swipe pager; the carousel itself
-    /// keeps all pages mounted (indices stay stable, the page is just
-    /// unreachable while disabled).
+    /// The tabs actually offered — each tab can be switched off in Settings.
+    /// Used by the tab bar and the swipe pager; the carousel itself keeps all
+    /// pages mounted (indices stay stable, the page is just unreachable while
+    /// disabled). The Settings UI guarantees at least one tab stays enabled.
     static var enabledTabs: [Tab] {
-        UserSettings.shared.claudeTabEnabled ? Tab.allCases : Tab.allCases.filter { $0 != .claude }
+        Tab.allCases.filter { UserSettings.shared.isTabEnabled($0) }
+    }
+
+    private var cancellables: Set<AnyCancellable> = []
+
+    init() {
+        // If the currently selected tab gets disabled in Settings, fall back to
+        // the first enabled tab — otherwise the island would sit on a page the
+        // tab bar no longer offers. Receive on main so `enabledTabs` is read
+        // *after* the setting actually changed (`objectWillChange` fires before).
+        UserSettings.shared.objectWillChange
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard let self else { return }
+                let enabled = Self.enabledTabs
+                if !enabled.contains(self.selectedTab), let fallback = enabled.first {
+                    self.selectedTab = fallback
+                }
+            }
+            .store(in: &cancellables)
     }
 
     /// While true (e.g. the capture field is focused) the island won't auto-
@@ -64,6 +104,7 @@ final class NotchViewModel: ObservableObject {
     @Published var captureFocusToken: Int = 0
 
     func requestCaptureFocus() {
+        guard Self.enabledTabs.contains(.capture) else { return }
         selectedTab = .capture
         captureFocusToken += 1
     }
@@ -112,15 +153,7 @@ final class NotchViewModel: ObservableObject {
     /// twice. The estimate errs generous; slight looseness is harmless,
     /// clipping is not.
     func soloWidth(for tab: Tab) -> CGFloat {
-        let title: String
-        switch tab {
-        case .music:   title = String(localized: "tab.music", defaultValue: "Musik")
-        case .files:   title = String(localized: "tab.files", defaultValue: "Ablage")
-        case .capture: title = String(localized: "tab.capture", defaultValue: "Capture")
-        case .timer:   title = String(localized: "tab.timer", defaultValue: "Timer")
-        case .claude:  title = String(localized: "tab.claude", defaultValue: "Claude")
-        }
-        let labelWidth = CGFloat(title.count) * NotchLayout.soloLabelCharWidth
+        let labelWidth = CGFloat(tab.title.count) * NotchLayout.soloLabelCharWidth
         return NotchLayout.soloBaseWidth + 2 * labelWidth
     }
 
