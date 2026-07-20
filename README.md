@@ -1,17 +1,17 @@
 <p align="center">
-  <img src="NotchMate/Assets.xcassets/AppIcon.appiconset/icon_256.png" width="128" alt="NotchMate icon">
+  <img src="NotchMate/Assets.xcassets/AppIcon.appiconset/icon_256.png" width="128" alt="Ledge icon">
 </p>
 
-<h1 align="center">NotchMate</h1>
+<h1 align="center">Ledge</h1>
 
 <p align="center">Your Mac's notch, doing something other than hiding a camera.</p>
 
 <p align="center">
-  <img src="assets/notch-expanded.png" width="620" alt="NotchMate expanded into now-playing controls">
+  <img src="assets/notch-expanded.png" width="620" alt="Ledge expanded into now-playing controls">
 </p>
 
 <p align="center">
-  <img src="assets/notch-collapsed.png" width="300" alt="NotchMate collapsed to a floating pill">
+  <img src="assets/notch-collapsed.png" width="300" alt="Ledge collapsed to a floating pill">
   <br>
   <sub>Idle, it's a pill next to the menu bar. Hover, and it opens up.</sub>
 </p>
