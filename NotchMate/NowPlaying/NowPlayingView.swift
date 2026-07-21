@@ -89,6 +89,7 @@ struct NowPlayingView: View {
                 isActive: nowPlaying.isPlaying && nowPlaying.screensAwake,
                 tint: nowPlaying.track != nil ? nowPlaying.artworkColor : nil,
                 secondaryTint: nowPlaying.track != nil ? nowPlaying.artworkSecondaryColor : nil,
+                tertiaryTint: nowPlaying.track != nil ? nowPlaying.artworkTertiaryColor : nil,
                 coverBars: nowPlaying.track != nil ? nowPlaying.coverBars : nil,
                 bands: (nowPlaying.isPlaying && spectrum.isLive) ? spectrum.bands : nil,
                 count: 6
@@ -304,10 +305,11 @@ private struct ControlButton: View {
 struct WaveBarsView: View {
     var isActive: Bool
     var tint: Color?
-    /// The cover's real second colour family (see `ArtworkAccents`), when it
-    /// has one. Used by `.alternating`/`.gradient` in "Vom Cover" mode; nil →
-    /// a pair is derived from `tint` instead.
+    /// The cover's real second and third colour families (see
+    /// `ArtworkAccents`), when it has them. Used by `.alternating`/`.gradient`
+    /// in "Vom Cover" mode; nil → a pair is derived from `tint` instead.
     var secondaryTint: Color? = nil
+    var tertiaryTint: Color? = nil
     /// Quantised cover colours (see `ArtworkColor.fetchBarPalette`) for the
     /// `.coverImage` style: one colour per bar, taken from the slice of cover
     /// that bar sits over. nil → the style falls back to `.solid` behaviour.
@@ -342,6 +344,18 @@ struct WaveBarsView: View {
         }
     }
 
+    /// The colour stops the `.gradient` style runs through, stage-vivid. Up to
+    /// three real cover colours; a single-hued cover still gets a two-stop run
+    /// via the synthetic pair so the wave never collapses to one flat colour.
+    private var gradientStops: [Color] {
+        let (a, b) = accentPair
+        var stops = [a, b]
+        if settings.spectrumColorSource == .cover, let tertiaryTint {
+            stops.append(tertiaryTint)
+        }
+        return stops.map(Color.stageVivid)
+    }
+
     // iOS's Dynamic Island wave bars are flat, fully-opaque colour top to
     // bottom — no fade. Ours used to fade each bar down to 55% opacity, which
     // (combined with how thin these bars are) made the colour nearly
@@ -350,25 +364,24 @@ struct WaveBarsView: View {
         switch settings.spectrumStyle {
         case .solid, .coverImage:
             // `.coverImage` only lands here as the no-artwork fallback (with a
-            // cover, the bars are a mask and their colour is irrelevant).
-            // No tint (no artwork, or the cover's dominant-colour extraction
-            // found no real hue) — default to white rather than a hardcoded
-            // accent, matching `ArtworkColor`'s own "no real colour here" answer.
-            return tint ?? .white
+            // cover, the bars carry the quantised palette instead). No tint (no
+            // artwork, or the cover's dominant-colour extraction found no real
+            // hue) — default to white rather than a hardcoded accent, matching
+            // `ArtworkColor`'s own "no real colour here" answer.
+            return tint.map(Color.stageVivid) ?? .white
         case .shades:
-            // Same hue as the cover accent throughout, muted toward grey at the
-            // edges and fully saturated/bright toward the right — the actual
-            // tell in the iOS reference (its quiet-looking edge bars are
-            // washed-out, not just darker).
+            // Full saturation across the whole run, brightness climbing left to
+            // right — a lit VU ramp. The earlier version desaturated the left
+            // bars toward grey (after the iOS reference), which at 16 bars
+            // turned half the wave grey; on a black notch, grey reads as off.
             let t = total > 1 ? Double(index) / Double(total - 1) : 0
-            return Color.shaded(tint ?? .white, t: t)
+            return Color.brightnessRamp(Color.stageVivid(tint ?? .white), t: t)
         case .alternating:
-            let (colorA, colorB) = accentPair
-            return index % 2 == 0 ? colorA : colorB
+            let stops = gradientStops
+            return stops[index % stops.count]
         case .gradient:
-            let (colorA, colorB) = accentPair
             let t = total > 1 ? Double(index) / Double(total - 1) : 0
-            return Color.mix(colorA, colorB, t: t)
+            return Color.multiStop(gradientStops, t: t)
         }
     }
 
@@ -390,13 +403,36 @@ struct WaveBarsView: View {
         if settings.spectrumStyle == .coverImage, let fill = coverFill(forBarAt: index, total: total) {
             return AnyShapeStyle(fill)
         }
-        return AnyShapeStyle(barColor(forBarAt: index, total: total))
+        // Depth: full colour at the tip falling to ~72% brightness at the
+        // base, so a tall bar reads as lit from its top rather than printed.
+        let color = barColor(forBarAt: index, total: total)
+        return AnyShapeStyle(LinearGradient(
+            colors: [color, Color.brightnessScaled(color, 0.72)],
+            startPoint: .top, endPoint: .bottom
+        ))
     }
 
-    private func bar(_ height: CGFloat, index: Int, total: Int) -> some View {
-        Capsule()
+    /// The colour a bar's glow is drawn in — its own body colour, or the
+    /// quantised cover colour for the `.coverImage` style.
+    private func glowColor(forBarAt index: Int, total: Int) -> Color {
+        if settings.spectrumStyle == .coverImage, let pair = coverBars?.pair(forBarAt: index, total: total) {
+            return pair.top
+        }
+        return barColor(forBarAt: index, total: total)
+    }
+
+    /// `level` is the band's normalized magnitude (0…1), independent of the
+    /// pixel height — it drives the glow.
+    private func bar(_ height: CGFloat, level: CGFloat, index: Int, total: Int) -> some View {
+        let boosted = max(0, min(1, level))
+        return Capsule()
             .fill(barFill(forBarAt: index, total: total))
             .frame(width: barWidth, height: height)
+            // The spectacle: every bar throws its own light, and louder bands
+            // glow harder. On the pure black island this halo is what makes
+            // the wave read as alive rather than printed on.
+            .shadow(color: glowColor(forBarAt: index, total: total).opacity(0.35 + 0.45 * boosted),
+                    radius: 1 + 3.5 * boosted)
     }
 
     /// iOS's spectrum bars never fully bottom out — even a silent band keeps a
@@ -425,25 +461,28 @@ struct WaveBarsView: View {
             let values = fitted(bands)
             HStack(alignment: .center, spacing: spacing) {
                 ForEach(values.indices, id: \.self) { i in
-                    bar(max(floorHeight, maxHeight * values[i]), index: i, total: values.count)
+                    bar(max(floorHeight, maxHeight * values[i]), level: values[i], index: i, total: values.count)
                 }
             }
             .frame(maxHeight: .infinity, alignment: .center)
             .animation(.easeOut(duration: 0.09), value: values)
             .animation(.easeInOut(duration: 0.4), value: tint)
             .animation(.easeInOut(duration: 0.4), value: secondaryTint)
+            .animation(.easeInOut(duration: 0.4), value: tertiaryTint)
             .animation(.easeInOut(duration: 0.4), value: coverBars)
         } else {
             TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !isActive)) { timeline in
                 let time = timeline.date.timeIntervalSinceReferenceDate
                 HStack(alignment: .center, spacing: spacing) {
                     ForEach(0..<count, id: \.self) { index in
-                        bar(proceduralHeight(index: index, time: time), index: index, total: count)
+                        let height = proceduralHeight(index: index, time: time)
+                        bar(height, level: maxHeight > 0 ? height / maxHeight : 0, index: index, total: count)
                     }
                 }
                 .frame(maxHeight: .infinity, alignment: .center)
                 .animation(.easeInOut(duration: 0.4), value: tint)
                 .animation(.easeInOut(duration: 0.4), value: secondaryTint)
+            .animation(.easeInOut(duration: 0.4), value: tertiaryTint)
                 .animation(.easeInOut(duration: 0.4), value: coverBars)
             }
         }
@@ -458,15 +497,60 @@ struct WaveBarsView: View {
 }
 
 private extension Color {
-    /// Linear RGB interpolation between two colours, `t` clamped to 0...1.
-    static func mix(_ a: Color, _ b: Color, t: Double) -> Color {
-        let ca = NSColor(a).usingColorSpace(.deviceRGB) ?? NSColor(a)
-        let cb = NSColor(b).usingColorSpace(.deviceRGB) ?? NSColor(b)
+    private var hsb: (h: CGFloat, s: CGFloat, b: CGFloat) {
+        let ns = NSColor(self).usingColorSpace(.deviceRGB) ?? NSColor(self)
+        var h: CGFloat = 0, s: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        ns.getHue(&h, saturation: &s, brightness: &b, alpha: &a)
+        return (h, s, b)
+    }
+
+    /// The push a colour gets *only when painted as a spectrum bar*: bars are
+    /// two points of colour on a pure black field and need stage lighting,
+    /// while the same accent stays tone-mapped (calmer) everywhere else —
+    /// title glow, placeholder tint. Keeps the hue, forces presence.
+    static func stageVivid(_ color: Color) -> Color {
+        let (h, s, b) = color.hsb
+        // A genuinely neutral colour (white fallback, B/W cover) must stay
+        // neutral — saturating it would invent a hue that isn't there.
+        guard s > 0.02 else { return color }
+        return Color(hue: h, saturation: max(0.68, min(0.95, s * 1.3)), brightness: max(0.85, min(1, b * 1.25)))
+    }
+
+    /// Same hue and saturation, brightness climbing from 60% to 100% across
+    /// `t` — the `.shades` VU ramp. Never desaturates: grey bars on a black
+    /// notch read as dead, not quiet.
+    static func brightnessRamp(_ color: Color, t: Double) -> Color {
+        let (h, s, b) = color.hsb
+        let clampedT = CGFloat(max(0, min(1, t)))
+        return Color(hue: h, saturation: s, brightness: b * (0.60 + 0.40 * clampedT))
+    }
+
+    /// Interpolation between two colours in HSB, hue travelling the *shortest
+    /// arc* — RGB interpolation between two saturated hues passes through the
+    /// desaturated middle and turns the wave's centre to mud.
+    static func hsbMix(_ a: Color, _ b: Color, t: Double) -> Color {
+        let ca = a.hsb, cb = b.hsb
         let fraction = CGFloat(max(0, min(1, t)))
-        let r = ca.redComponent + (cb.redComponent - ca.redComponent) * fraction
-        let g = ca.greenComponent + (cb.greenComponent - ca.greenComponent) * fraction
-        let blue = ca.blueComponent + (cb.blueComponent - ca.blueComponent) * fraction
-        return Color(red: r, green: g, blue: blue)
+        var dh = cb.h - ca.h
+        if dh > 0.5 { dh -= 1 }
+        if dh < -0.5 { dh += 1 }
+        var h = (ca.h + dh * fraction).truncatingRemainder(dividingBy: 1)
+        if h < 0 { h += 1 }
+        return Color(
+            hue: h,
+            saturation: ca.s + (cb.s - ca.s) * fraction,
+            brightness: ca.b + (cb.b - ca.b) * fraction
+        )
+    }
+
+    /// `t` (0…1) mapped across an evenly spaced run of `stops` — the wave
+    /// flows through every colour the cover offered, not just two.
+    static func multiStop(_ stops: [Color], t: Double) -> Color {
+        guard stops.count > 1 else { return stops.first ?? .white }
+        let clamped = max(0, min(1, t))
+        let scaled = clamped * Double(stops.count - 1)
+        let index = min(stops.count - 2, Int(scaled))
+        return hsbMix(stops[index], stops[index + 1], t: scaled - Double(index))
     }
 
     /// Same hue and saturation, brightness scaled by `factor` (clamped) — used
@@ -490,20 +574,4 @@ private extension Color {
         return (color, shifted)
     }
 
-    /// Same hue as `color`, saturation *and* brightness scaled by position `t`
-    /// (0...1): low `t` fades toward a washed-out grey version of the hue, high
-    /// `t` reaches full saturation/brightness. Matches the iOS Dynamic Island
-    /// reference, where the quiet-looking bars read as genuinely desaturated,
-    /// not just a darker version of the same colour (brightness-only, the
-    /// original version of this, was too subtle to read as colour at all on
-    /// bars this thin).
-    static func shaded(_ color: Color, t: Double) -> Color {
-        let ns = NSColor(color).usingColorSpace(.deviceRGB) ?? NSColor(color)
-        var h: CGFloat = 0, s: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
-        ns.getHue(&h, saturation: &s, brightness: &b, alpha: &a)
-        let clampedT = CGFloat(max(0, min(1, t)))
-        let saturation = s * (0.35 + 0.65 * clampedT)
-        let brightness = min(1, max(0.55, b * (0.75 + 0.4 * clampedT)))
-        return Color(hue: h, saturation: saturation, brightness: brightness)
-    }
 }

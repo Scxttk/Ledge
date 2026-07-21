@@ -30,13 +30,20 @@ struct CoverBarTuning: Equatable {
 /// resampled. The collapsed pill and the expanded wave draw different counts,
 /// hence a small table.
 /// The accents a cover actually contains: the dominant hue, plus — when the
-/// artwork really has a second colour family — the strongest hue at least 60°
-/// away from it. The secondary feeds the `gradient`/`alternating` styles in
-/// "Vom Cover" mode, so their second colour comes from the sleeve instead of a
-/// synthetic hue shift.
+/// artwork really has them — up to two more colour families (secondary at
+/// least 60° from the winner, tertiary at least 45° from both). They feed the
+/// `gradient`/`alternating` styles in "Vom Cover" mode, so the wave runs
+/// through colours the sleeve actually contains instead of synthetic shifts.
 struct ArtworkAccents: Equatable {
     let primary: Color
     let secondary: Color?
+    let tertiary: Color?
+
+    init(primary: Color, secondary: Color? = nil, tertiary: Color? = nil) {
+        self.primary = primary
+        self.secondary = secondary
+        self.tertiary = tertiary
+    }
 }
 
 struct CoverBarPalette: Equatable {
@@ -306,6 +313,11 @@ enum ArtworkColor {
     private static let minimumSecondaryShare: Double = 0.05
     /// 60° on the hue circle (distances measured as `min(d, 1-d)`, 0…0.5).
     private static let minimumSecondaryHueDistance: CGFloat = 1.0 / 6.0
+    /// The third accent can be smaller and closer (45°) — by the time a cover
+    /// has three real colour families, the third is usually an accent stripe,
+    /// not a region.
+    private static let minimumTertiaryShare: Double = 0.04
+    private static let minimumTertiaryHueDistance: CGFloat = 0.125
 
     /// The accents that dominate the artwork. `primary` falls back to a muted
     /// tint (near-monochrome cover) or white (no hue at all); nil only when
@@ -321,12 +333,26 @@ enum ArtworkColor {
             return ArtworkAccents(primary: primary, secondary: nil)
         }
         let winnerHue = hue(of: winner.rgb)
-        let secondary = analysis.buckets.dropFirst().first { bucket in
-            guard bucket.share >= minimumSecondaryShare else { return false }
-            let d = abs(hue(of: bucket.rgb) - winnerHue)
-            return min(d, 1 - d) >= minimumSecondaryHueDistance
+        func hueDistance(_ a: CGFloat, _ b: CGFloat) -> CGFloat {
+            let d = abs(a - b)
+            return min(d, 1 - d)
         }
-        return ArtworkAccents(primary: vibrant(winner.rgb), secondary: secondary.map { vibrant($0.rgb) })
+        let secondary = analysis.buckets.dropFirst().first { bucket in
+            bucket.share >= minimumSecondaryShare
+                && hueDistance(hue(of: bucket.rgb), winnerHue) >= minimumSecondaryHueDistance
+        }
+        let secondaryHue = secondary.map { hue(of: $0.rgb) }
+        let tertiary = secondary == nil ? nil : analysis.buckets.dropFirst().first { bucket in
+            guard bucket.share >= minimumTertiaryShare else { return false }
+            let h = hue(of: bucket.rgb)
+            return hueDistance(h, winnerHue) >= minimumTertiaryHueDistance
+                && hueDistance(h, secondaryHue ?? 0) >= minimumTertiaryHueDistance
+        }
+        return ArtworkAccents(
+            primary: vibrant(winner.rgb),
+            secondary: secondary.map { vibrant($0.rgb) },
+            tertiary: tertiary.map { vibrant($0.rgb) }
+        )
     }
 
     /// The accent for an essentially monochrome cover with a faint colour
