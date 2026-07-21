@@ -32,6 +32,10 @@ that had been hiding since the spectrum tap learned to hear non-music audio.
   when it has one.
 - The island opens with a visible overshoot-and-settle now, like the iPhone's.
   Closing stays deliberately calm — overshoot on the way out reads wrong.
+- The spectrum got stage lighting: no more grey-washed edge bars (the Shades
+  style is a full-saturation brightness ramp now), gradients run through up to
+  three colors the cover actually contains, and every bar throws a glow that
+  pulses with its band.
 - The spectrum analyzer resolves 16 bands (was 6), enough to feed the wide
   pill; the smaller waves bucket down as before.
 - New original waveform app icon (the earlier one leaned on the Obsidian logo).
