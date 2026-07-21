@@ -26,6 +26,17 @@ final class UserSettings: ObservableObject {
             case .appleMusic: return String(localized: "source.appleMusic", defaultValue: "Apple Music")
             }
         }
+
+        /// Bundle ID of the player app, to match against the bundle ID
+        /// `SpectrumAnalyzer` reports for whatever is actually feeding audio.
+        /// nil for `.auto`, which is a selection mode, not an app.
+        var bundleID: String? {
+            switch self {
+            case .auto: return nil
+            case .spotify: return "com.spotify.client"
+            case .appleMusic: return "com.apple.Music"
+            }
+        }
     }
 
     enum Appearance: String, CaseIterable, Identifiable {
@@ -122,6 +133,10 @@ final class UserSettings: ObservableObject {
         static let hudEnabled = "hudEnabled"
         static let suppressSystemOSD = "suppressSystemOSD"
         static let spectrumStyle = "spectrumStyle"
+        static let coverPaletteSize = "coverPaletteSize"
+        static let coverBrightnessLevels = "coverBrightnessLevels"
+        static let coverBarSaturation = "coverBarSaturation"
+        static let coverBarBrightness = "coverBarBrightness"
         static let spectrumColorSource = "spectrumColorSource"
         static let spectrumColorA = "spectrumColorA"
         static let spectrumColorB = "spectrumColorB"
@@ -172,6 +187,27 @@ final class UserSettings: ObservableObject {
     }
     @Published var spectrumStyle: SpectrumStyle {
         didSet { defaults.set(spectrumStyle.rawValue, forKey: Key.spectrumStyle) }
+    }
+    // Tuning for the `.coverImage` spectrum style. These four decide how hard
+    // the cover's colours are bundled and how they read on the black notch;
+    // exposed as controls because the right values are a matter of taste and
+    // depend on the covers you actually listen to. Changing any of them
+    // recomputes the current cover's palette live (`NowPlayingManager`).
+    /// How many cover colours the bars are quantised onto (1…5).
+    @Published var coverPaletteSize: Int {
+        didSet { defaults.set(coverPaletteSize, forKey: Key.coverPaletteSize) }
+    }
+    /// Brightness steps kept per bar (1 = flat colour, higher = more of the
+    /// cover's light and shade survives).
+    @Published var coverBrightnessLevels: Int {
+        didSet { defaults.set(coverBrightnessLevels, forKey: Key.coverBrightnessLevels) }
+    }
+    /// Multipliers on the bars' saturation and brightness (1.0 = as derived).
+    @Published var coverBarSaturation: Double {
+        didSet { defaults.set(coverBarSaturation, forKey: Key.coverBarSaturation) }
+    }
+    @Published var coverBarBrightness: Double {
+        didSet { defaults.set(coverBarBrightness, forKey: Key.coverBarBrightness) }
     }
     @Published var spectrumColorSource: SpectrumColorSource {
         didSet { defaults.set(spectrumColorSource.rawValue, forKey: Key.spectrumColorSource) }
@@ -307,6 +343,10 @@ final class UserSettings: ObservableObject {
             Key.captureTabEnabled: true,
             Key.timerTabEnabled: true,
             Key.claudeTabEnabled: true,
+            Key.coverPaletteSize: 4,
+            Key.coverBrightnessLevels: 3,
+            Key.coverBarSaturation: 1.0,
+            Key.coverBarBrightness: 1.0,
         ])
         self.mediaSource = MediaSource(rawValue: defaults.string(forKey: Key.mediaSource) ?? "") ?? .auto
         self.appearance = Appearance(rawValue: defaults.string(forKey: Key.appearance) ?? "") ?? .system
@@ -315,6 +355,10 @@ final class UserSettings: ObservableObject {
         self.suppressSystemOSD = defaults.bool(forKey: Key.suppressSystemOSD)
         self.spectrumStyle = SpectrumStyle(rawValue: defaults.string(forKey: Key.spectrumStyle) ?? "") ?? .shades
         self.spectrumColorSource = SpectrumColorSource(rawValue: defaults.string(forKey: Key.spectrumColorSource) ?? "") ?? .cover
+        self.coverPaletteSize = defaults.integer(forKey: Key.coverPaletteSize)
+        self.coverBrightnessLevels = defaults.integer(forKey: Key.coverBrightnessLevels)
+        self.coverBarSaturation = defaults.double(forKey: Key.coverBarSaturation)
+        self.coverBarBrightness = defaults.double(forKey: Key.coverBarBrightness)
         self.spectrumColorA = Self.decodeColor(defaults.data(forKey: Key.spectrumColorA)) ?? .cyan
         self.spectrumColorB = Self.decodeColor(defaults.data(forKey: Key.spectrumColorB)) ?? .purple
         self.vaultBookmark = defaults.data(forKey: Key.vaultBookmark)

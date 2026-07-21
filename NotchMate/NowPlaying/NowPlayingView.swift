@@ -88,7 +88,7 @@ struct NowPlayingView: View {
             WaveBarsView(
                 isActive: nowPlaying.isPlaying && nowPlaying.screensAwake,
                 tint: nowPlaying.track != nil ? nowPlaying.artworkColor : nil,
-                coverImage: nowPlaying.track != nil ? nowPlaying.simplifiedArtwork : nil,
+                coverBars: nowPlaying.track != nil ? nowPlaying.coverBars : nil,
                 bands: (nowPlaying.isPlaying && spectrum.isLive) ? spectrum.bands : nil,
                 count: 6
             )
@@ -303,10 +303,10 @@ private struct ControlButton: View {
 struct WaveBarsView: View {
     var isActive: Bool
     var tint: Color?
-    /// Simplified cover (see `ArtworkColor.fetchSimplified`) for the
-    /// `.coverImage` style: laid 1:1 behind the whole spectrum and revealed by
-    /// the bars as a mask. nil → the style falls back to `.solid` behaviour.
-    var coverImage: NSImage? = nil
+    /// Quantised cover colours (see `ArtworkColor.fetchBarPalette`) for the
+    /// `.coverImage` style: one colour per bar, taken from the slice of cover
+    /// that bar sits over. nil → the style falls back to `.solid` behaviour.
+    var coverBars: CoverBarPalette? = nil
     /// Live per-band magnitudes (0…1). nil/empty → procedural fallback.
     var bands: [CGFloat]? = nil
     var count: Int = 4
@@ -364,9 +364,30 @@ struct WaveBarsView: View {
         }
     }
 
+    /// `.coverImage` fill: the bar's quantised cover colour, with a faint
+    /// top-to-bottom gradient. Neighbouring bars over the same region of the
+    /// artwork quantise to the *same* colour — that bundling is the point — so
+    /// when a column's two halves land on one palette entry the gradient is
+    /// spread by brightness instead, keeping each bar from reading as a flat
+    /// slab without reintroducing the old multi-colour smear.
+    private func coverFill(forBarAt index: Int, total: Int) -> LinearGradient? {
+        guard let pair = coverBars?.pair(forBarAt: index, total: total) else { return nil }
+        let (top, bottom) = pair.top == pair.bottom
+            ? (pair.top, Color.brightnessScaled(pair.bottom, 0.92))
+            : pair
+        return LinearGradient(colors: [top, bottom], startPoint: .top, endPoint: .bottom)
+    }
+
+    private func barFill(forBarAt index: Int, total: Int) -> AnyShapeStyle {
+        if settings.spectrumStyle == .coverImage, let fill = coverFill(forBarAt: index, total: total) {
+            return AnyShapeStyle(fill)
+        }
+        return AnyShapeStyle(barColor(forBarAt: index, total: total))
+    }
+
     private func bar(_ height: CGFloat, index: Int, total: Int) -> some View {
         Capsule()
-            .fill(barColor(forBarAt: index, total: total))
+            .fill(barFill(forBarAt: index, total: total))
             .frame(width: barWidth, height: height)
     }
 
@@ -388,30 +409,8 @@ struct WaveBarsView: View {
         }
     }
 
-    /// Total width the bars span — the simplified cover is sized to exactly
-    /// this rect so bar position maps 1:1 onto cover position.
-    private var totalWidth: CGFloat {
-        CGFloat(count) * barWidth + CGFloat(max(0, count - 1)) * spacing
-    }
-
-    var body: some View {
-        if settings.spectrumStyle == .coverImage, let coverImage {
-            // iPhone-style: the bars don't have colours of their own — they
-            // mask the simplified cover, so a peaking bar reveals colours of
-            // its cover column that a low bar keeps hidden.
-            Image(nsImage: coverImage)
-                .resizable()
-                .interpolation(.medium)
-                .frame(width: totalWidth, height: maxHeight)
-                .mask(barsContent)
-                .frame(maxHeight: .infinity, alignment: .center)
-        } else {
-            barsContent
-        }
-    }
-
     @ViewBuilder
-    private var barsContent: some View {
+    var body: some View {
         if let bands, !bands.isEmpty {
             // Real spectrum: bar height follows each band; the analyzer already
             // smooths, a short animation just eases between UI updates.
@@ -424,6 +423,7 @@ struct WaveBarsView: View {
             .frame(maxHeight: .infinity, alignment: .center)
             .animation(.easeOut(duration: 0.09), value: values)
             .animation(.easeInOut(duration: 0.4), value: tint)
+            .animation(.easeInOut(duration: 0.4), value: coverBars)
         } else {
             TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !isActive)) { timeline in
                 let time = timeline.date.timeIntervalSinceReferenceDate
@@ -434,6 +434,7 @@ struct WaveBarsView: View {
                 }
                 .frame(maxHeight: .infinity, alignment: .center)
                 .animation(.easeInOut(duration: 0.4), value: tint)
+                .animation(.easeInOut(duration: 0.4), value: coverBars)
             }
         }
     }
@@ -456,6 +457,16 @@ private extension Color {
         let g = ca.greenComponent + (cb.greenComponent - ca.greenComponent) * fraction
         let blue = ca.blueComponent + (cb.blueComponent - ca.blueComponent) * fraction
         return Color(red: r, green: g, blue: blue)
+    }
+
+    /// Same hue and saturation, brightness scaled by `factor` (clamped) — used
+    /// to spread a faint gradient across a bar whose cover column quantised to
+    /// a single colour.
+    static func brightnessScaled(_ color: Color, _ factor: Double) -> Color {
+        let ns = NSColor(color).usingColorSpace(.deviceRGB) ?? NSColor(color)
+        var h: CGFloat = 0, s: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        ns.getHue(&h, saturation: &s, brightness: &b, alpha: &a)
+        return Color(hue: h, saturation: s, brightness: min(1, max(0.1, b * CGFloat(factor))))
     }
 
     /// A two-tone pair derived from a single base colour: same saturation and

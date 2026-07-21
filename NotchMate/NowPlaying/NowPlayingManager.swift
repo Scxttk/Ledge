@@ -20,9 +20,9 @@ final class NowPlayingManager: ObservableObject {
     /// Accent colour derived from the current cover, tinting the wave visualizer.
     /// nil when there's no artwork (e.g. Apple Music) — the wave falls back to blue.
     @Published private(set) var artworkColor: Color?
-    /// Tiny-grid simplification of the current cover for the `.coverImage`
-    /// spectrum style (the bars mask this image); nil when there's no artwork.
-    @Published private(set) var simplifiedArtwork: NSImage?
+    /// Quantised per-column cover colours for the `.coverImage` spectrum style;
+    /// nil when there's no artwork.
+    @Published private(set) var coverBars: CoverBarPalette?
     /// The artwork URL the current `artworkColor` was computed for, so we only
     /// recompute when the cover actually changes.
     private var artworkColorURL: URL?
@@ -59,6 +59,7 @@ final class NowPlayingManager: ObservableObject {
     private let refreshIntervalIdle = 20
     private var currentRefreshInterval: Int { isPlaying ? refreshIntervalActive : refreshIntervalIdle }
     private var cancellable: AnyCancellable?
+    private var tuningCancellable: AnyCancellable?
 
     init(settings: UserSettings = .shared) {
         self.settings = settings
@@ -81,6 +82,21 @@ final class NowPlayingManager: ObservableObject {
             .dropFirst()
             .sink { [weak self] _ in self?.hardRefresh() }
 
+        // Same for the cover-style tuning: recompute the current cover's bar
+        // colours so the sliders read as live. Merged into one stream because
+        // any of the four has the same effect.
+        tuningCancellable = Publishers.MergeMany(
+            settings.$coverPaletteSize.map { _ in () }.eraseToAnyPublisher(),
+            settings.$coverBrightnessLevels.map { _ in () }.eraseToAnyPublisher(),
+            settings.$coverBarSaturation.map { _ in () }.eraseToAnyPublisher(),
+            settings.$coverBarBrightness.map { _ in () }.eraseToAnyPublisher()
+        )
+        .dropFirst(4)   // the four current values, replayed on subscribe
+        // A slider drag emits continuously; recomputing per step would be
+        // wasted work. Short enough to still feel immediate.
+        .debounce(for: .milliseconds(80), scheduler: DispatchQueue.main)
+        .sink { [weak self] in self?.refreshCoverBars() }
+
         isStarted = true
         hardRefresh()
         startTimer()
@@ -90,6 +106,7 @@ final class NowPlayingManager: ObservableObject {
         isStarted = false
         stopTimer()
         cancellable = nil
+        tuningCancellable = nil
         DistributedNotificationCenter.default().removeObserver(self)
     }
 
@@ -190,7 +207,7 @@ final class NowPlayingManager: ObservableObject {
         artworkColorURL = url
         guard let url else {
             artworkColor = nil
-            simplifiedArtwork = nil
+            coverBars = nil
             return
         }
         ArtworkColor.fetch(from: url) { [weak self] color in
@@ -198,9 +215,21 @@ final class NowPlayingManager: ObservableObject {
             guard let self, self.artworkColorURL == url else { return }
             self.artworkColor = color
         }
-        ArtworkColor.fetchSimplified(from: url) { [weak self] image in
+        refreshCoverBars()
+    }
+
+    /// Recompute the bar palette for the cover we're already showing. Separate
+    /// from `refreshArtworkColor` because the cover-style tuning can change
+    /// while the same track keeps playing — the sliders in Settings are meant
+    /// to be judged live, against whatever is on screen right now.
+    private func refreshCoverBars() {
+        guard let url = artworkColorURL else {
+            coverBars = nil
+            return
+        }
+        ArtworkColor.fetchBarPalette(from: url, tuning: CoverBarTuning(settings: settings)) { [weak self] palette in
             guard let self, self.artworkColorURL == url else { return }
-            self.simplifiedArtwork = image
+            self.coverBars = palette
         }
     }
 

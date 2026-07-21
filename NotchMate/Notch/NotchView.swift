@@ -462,10 +462,25 @@ private struct CollapsedView: View {
     /// (Safari's blue, …) for generic system audio, else `nil` (→ white) when
     /// neither is available.
     private var waveTint: Color? {
-        if nowPlaying.isPlaying, nowPlaying.track?.artworkURL != nil {
-            return nowPlaying.artworkColor
-        }
+        if showsTrackArtwork { return nowPlaying.artworkColor }
         return sourceAppTint
+    }
+
+    /// Whether the hero shows the current track's cover rather than the audio
+    /// source app's icon.
+    ///
+    /// Not simply `isPlaying`: pausing drops that flag at once while
+    /// `spectrum.hasSignal` holds the pill open for another couple of seconds,
+    /// and swapping the cover out for the player's own app icon in that window
+    /// showed Spotify's logo beside flat bars for no reason. So a paused track
+    /// keeps its cover — unless some *other* app is the one making noise
+    /// (Safari playing a video while Spotify sits paused), which is exactly the
+    /// case the app-icon branch exists for.
+    private var showsTrackArtwork: Bool {
+        guard nowPlaying.track?.artworkURL != nil else { return false }
+        if nowPlaying.isPlaying { return true }
+        guard let sourceBundleID = spectrum.sourceBundleID else { return true }
+        return sourceBundleID == nowPlaying.activeSourceID.bundleID
     }
 
     private func refreshSourceAppIcon(for bundleID: String?) {
@@ -491,7 +506,7 @@ private struct CollapsedView: View {
         // silhouette — so both sides read from the same `NotchLayout` constants.
         HStack(spacing: NotchLayout.collapsedItemSpacing) {
             if hasAudioHero {
-                if nowPlaying.isPlaying, let url = nowPlaying.track?.artworkURL {
+                if showsTrackArtwork, let url = nowPlaying.track?.artworkURL {
                     // Fade the new cover in (transaction animation) over a placeholder
                     // tinted to the track's accent colour rather than flat grey, so a
                     // track change doesn't flash a grey square then pop during the
@@ -531,8 +546,7 @@ private struct CollapsedView: View {
                 WaveBarsView(
                     isActive: nowPlaying.screensAwake,
                     tint: waveTint,
-                    coverImage: nowPlaying.isPlaying && nowPlaying.track?.artworkURL != nil
-                        ? nowPlaying.simplifiedArtwork : nil,
+                    coverBars: showsTrackArtwork ? nowPlaying.coverBars : nil,
                     bands: spectrum.isLive ? spectrum.bands : nil,
                     count: NotchLayout.collapsedWaveBarCount,
                     maxHeight: NotchLayout.collapsedWaveMaxHeight,

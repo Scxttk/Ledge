@@ -2,8 +2,59 @@ import AppKit
 import CoreImage
 import SwiftUI
 
+/// The taste-dependent half of the bar-palette computation, read from
+/// `UserSettings` on the main thread and handed to `ArtworkColor` so the
+/// background work never touches the settings object. Equatable so a changed
+/// value can invalidate the cache.
+struct CoverBarTuning: Equatable {
+    var paletteSize: Int
+    var brightnessLevels: Int
+    var saturation: CGFloat
+    var brightness: CGFloat
+
+    init(settings: UserSettings = .shared) {
+        paletteSize = max(1, min(5, settings.coverPaletteSize))
+        brightnessLevels = max(1, min(4, settings.coverBrightnessLevels))
+        saturation = CGFloat(settings.coverBarSaturation)
+        brightness = CGFloat(settings.coverBarBrightness)
+    }
+}
+
+/// Quantised cover colours for the `.coverImage` spectrum style: one colour per
+/// bar, taken from the vertical slice of cover that bar sits over (left bar =
+/// left of cover), split into the slice's top and bottom half so a bar keeps a
+/// faint cover-derived gradient.
+///
+/// Precomputed per bar count rather than per fixed column: which colour wins a
+/// slice depends on how wide the slice is, so five bars are not just six bars
+/// resampled. The collapsed pill and the expanded wave draw different counts,
+/// hence a small table.
+struct CoverBarPalette: Equatable {
+    struct Bar: Equatable {
+        let top: Color
+        let bottom: Color
+    }
+
+    /// Bar counts the table is built for — the pill's and the music tab's.
+    static let supportedBarCounts = [3, 4, 5, 6, 7, 8]
+
+    let bars: [Int: [Bar]]
+
+    func pair(forBarAt index: Int, total: Int) -> (top: Color, bottom: Color)? {
+        // Fall back to the nearest count we did compute rather than drawing
+        // nothing, if a caller ever asks for an unsupported bar count.
+        let row = bars[total] ?? bars[Self.supportedBarCounts.min {
+            abs($0 - total) < abs($1 - total)
+        } ?? 5]
+        guard let row, index >= 0, !row.isEmpty else { return nil }
+        let bar = row[min(index, row.count - 1)]
+        return (bar.top, bar.bottom)
+    }
+}
+
 /// Derives a single vibrant accent colour from album artwork — used to tint the
-/// now-playing wave visualizer so it matches the cover.
+/// now-playing wave visualizer so it matches the cover — and the quantised
+/// per-column palette the `.coverImage` bar style draws with.
 ///
 /// A plain pixel average (`CIAreaAverage`) blends *all* regions of the cover
 /// into one value, which reads as a muddy brown/olive whenever the artwork has
@@ -24,7 +75,8 @@ enum ArtworkColor {
     private static let context = CIContext(options: [.workingColorSpace: NSNull()])
     private static var cache: [URL: Color] = [:]
     private static var iconCache: [String: Color] = [:]
-    private static var simplifiedCache: [URL: NSImage] = [:]
+    private static var barPaletteCache: [URL: CoverBarPalette] = [:]
+    private static var cachedTuning = CoverBarTuning()
 
     /// Loads `url` off the main thread and calls back on the main thread with a
     /// tint, or nil if it couldn't be derived. Results are cached per URL.
@@ -61,46 +113,46 @@ enum ArtworkColor {
         }
     }
 
-    /// A heavily-simplified version of the cover for the `.coverImage` spectrum
-    /// style: downscaled to a tiny grid so only the artwork's main colour
-    /// regions survive, with a soft gradient between them once SwiftUI scales
-    /// it back up smoothly. The spectrum bars mask this image 1:1 — left bar =
-    /// left side of the cover — the way the iPhone's Dynamic Island wave does.
-    static func fetchSimplified(from url: URL, completion: @escaping (NSImage?) -> Void) {
-        if let cached = simplifiedCache[url] {
+    /// Quantised per-column cover colours for the `.coverImage` spectrum style.
+    /// Results are cached per URL.
+    static func fetchBarPalette(from url: URL, tuning: CoverBarTuning, completion: @escaping (CoverBarPalette?) -> Void) {
+        // The cache holds colours computed for one particular tuning, so a
+        // changed slider has to throw it away rather than serve stale values.
+        if tuning != cachedTuning {
+            cachedTuning = tuning
+            barPaletteCache.removeAll()
+        }
+        if let cached = barPaletteCache[url] {
             completion(cached)
             return
         }
         DispatchQueue.global(qos: .utility).async {
-            let image = data(for: url).flatMap(simplifiedImage(from:))
+            let palette = data(for: url).flatMap { barPalette(from: $0, tuning: tuning) }
             DispatchQueue.main.async {
-                if let image { simplifiedCache[url] = image }
-                completion(image)
+                if let palette { barPaletteCache[url] = palette }
+                completion(palette)
             }
         }
     }
 
-    /// Downscale to a tiny square so only the dominant colour regions remain.
-    private static func simplifiedImage(from data: Data) -> NSImage? {
-        guard let image = CIImage(data: data) else { return nil }
-        let extent = image.extent
-        guard extent.width > 0, extent.height > 0 else { return nil }
-
-        let side: CGFloat = 5
-        let scale = side / max(extent.width, extent.height)
-        guard let scaleFilter = CIFilter(name: "CILanczosScaleTransform", parameters: [
-            kCIInputImageKey: image,
-            kCIInputScaleKey: scale,
-            kCIInputAspectRatioKey: 1.0,
-        ]), let scaled = scaleFilter.outputImage else { return nil }
-
-        guard let cg = context.createCGImage(scaled, from: scaled.extent) else { return nil }
-        return NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
-    }
+    /// The most recently loaded cover, kept so re-deriving the palette (which
+    /// happens on every tuning change, i.e. on every step of a slider drag)
+    /// doesn't re-download the JPEG each time. One entry is enough: only the
+    /// current track's cover is ever recomputed.
+    private static var lastImageData: (url: URL, data: Data)?
+    private static let imageDataLock = NSLock()
 
     private static func data(for url: URL) -> Data? {
-        if url.isFileURL { return try? Data(contentsOf: url) }
-        return try? Data(contentsOf: url)   // artwork URLs are small remote JPEGs
+        imageDataLock.lock()
+        let cached = lastImageData
+        imageDataLock.unlock()
+        if let cached, cached.url == url { return cached.data }
+
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        imageDataLock.lock()
+        lastImageData = (url, data)
+        imageDataLock.unlock()
+        return data
     }
 
     private static func pngData(from image: NSImage) -> Data? {
@@ -113,19 +165,31 @@ enum ArtworkColor {
     /// detail on an essentially monochrome cover, not a real accent.
     private static let minimumDominantShare: Double = 0.10
 
-    /// Downscales to a small grid, buckets pixels by hue (skipping washed-out
-    /// near-gray/near-black/near-white ones, which carry no real colour
-    /// information), and picks the bucket with the most saturation-weighted
-    /// mass — i.e. the hue that actually dominates the artwork. Falls back to
-    /// white if no bucket reaches `minimumDominantShare` of the image, and to
-    /// nil (caller decides its own default) only when the image couldn't be
-    /// read/decoded at all.
-    private static func dominantColor(from data: Data) -> Color? {
+    /// One hue bucket's saturation-weighted average colour plus how much of the
+    /// image it covers, as produced by `hueBuckets(from:)`.
+    private struct HueBucket {
+        var rgb: (r: CGFloat, g: CGFloat, b: CGFloat)
+        var share: Double
+    }
+
+    /// What `hueBuckets(from:)` found: the hue buckets themselves plus how much
+    /// of the cover carries no hue at all (the black/white/grey pixels the
+    /// buckets deliberately ignore). The bar palette needs that neutral share —
+    /// a cover that's half white lettering on red shouldn't have its white half
+    /// snapped onto the red.
+    private struct HueAnalysis {
+        var buckets: [HueBucket]
+        var neutralShare: Double
+        /// Average brightness of those neutral pixels (0…1).
+        var neutralLuma: CGFloat
+    }
+
+    /// Renders `data` into an RGBA8 grid of at most `side` × `side` pixels.
+    private static func sample(_ data: Data, side: CGFloat) -> (bitmap: [UInt8], width: Int, height: Int)? {
         guard let image = CIImage(data: data) else { return nil }
         let extent = image.extent
         guard extent.width > 0, extent.height > 0 else { return nil }
 
-        let side: CGFloat = 32
         let scale = side / max(extent.width, extent.height)
         guard let scaleFilter = CIFilter(name: "CILanczosScaleTransform", parameters: [
             kCIInputImageKey: image,
@@ -143,6 +207,17 @@ enum ArtworkColor {
             bounds: CGRect(x: 0, y: 0, width: width, height: height),
             format: .RGBA8, colorSpace: CGColorSpaceCreateDeviceRGB()
         )
+        return (bitmap, width, height)
+    }
+
+    /// Buckets the cover's pixels by hue (skipping washed-out
+    /// near-gray/near-black/near-white ones, which carry no real colour
+    /// information) and returns the non-empty buckets ordered by
+    /// saturation-weighted mass — i.e. the hues that actually dominate the
+    /// artwork, strongest first. nil only when the image couldn't be
+    /// read/decoded at all.
+    private static func hueBuckets(from data: Data) -> HueAnalysis? {
+        guard let (bitmap, width, height) = sample(data, side: 32) else { return nil }
 
         let bucketCount = 24
         var bucketWeight = [CGFloat](repeating: 0, count: bucketCount)
@@ -150,6 +225,8 @@ enum ArtworkColor {
         var bucketG = [CGFloat](repeating: 0, count: bucketCount)
         var bucketB = [CGFloat](repeating: 0, count: bucketCount)
         var bucketPixelCount = [Int](repeating: 0, count: bucketCount)
+        var neutralPixelCount = 0
+        var neutralLumaSum: CGFloat = 0
         let totalPixelCount = width * height
 
         for i in stride(from: 0, to: bitmap.count, by: 4) {
@@ -164,7 +241,11 @@ enum ArtworkColor {
             // pastel pixels fade out on their own; a strict cutoff here was
             // throwing out most of a typical (slightly muted, JPEG-compressed)
             // cover.
-            guard s > 0.06, v > 0.05, v < 0.98 else { continue }
+            guard s > 0.06, v > 0.05, v < 0.98 else {
+                neutralPixelCount += 1
+                neutralLumaSum += v
+                continue
+            }
             let bucket = min(bucketCount - 1, Int(h * CGFloat(bucketCount)))
             // s² alone let a large area of dark-but-saturated shadow/background
             // (a deep teal-black gradient, say) outvote a smaller, brighter,
@@ -184,17 +265,290 @@ enum ArtworkColor {
             bucketPixelCount[bucket] += 1
         }
 
-        guard let winner = bucketWeight.indices.max(by: { bucketWeight[$0] < bucketWeight[$1] }),
-              bucketWeight[winner] > 0,
-              Double(bucketPixelCount[winner]) / Double(totalPixelCount) >= minimumDominantShare
-        else { return .white }
-
-        return vibrant((
-            r: bucketR[winner] / bucketWeight[winner],
-            g: bucketG[winner] / bucketWeight[winner],
-            b: bucketB[winner] / bucketWeight[winner]
-        ))
+        let buckets = bucketWeight.indices
+            .filter { bucketWeight[$0] > 0 }
+            .sorted { bucketWeight[$0] > bucketWeight[$1] }
+            .map { i in
+                HueBucket(
+                    rgb: (bucketR[i] / bucketWeight[i], bucketG[i] / bucketWeight[i], bucketB[i] / bucketWeight[i]),
+                    share: Double(bucketPixelCount[i]) / Double(totalPixelCount)
+                )
+            }
+        return HueAnalysis(
+            buckets: buckets,
+            neutralShare: Double(neutralPixelCount) / Double(totalPixelCount),
+            neutralLuma: neutralPixelCount > 0 ? neutralLumaSum / CGFloat(neutralPixelCount) : 1
+        )
     }
+
+    /// The hue that dominates the artwork. Falls back to white if no bucket
+    /// reaches `minimumDominantShare` of the image, and to nil (caller decides
+    /// its own default) only when the image couldn't be read/decoded at all.
+    private static func dominantColor(from data: Data) -> Color? {
+        guard let analysis = hueBuckets(from: data) else { return nil }
+        guard let winner = analysis.buckets.first, winner.share >= minimumDominantShare else { return .white }
+        return vibrant(winner.rgb)
+    }
+
+    // MARK: Bar palette (`.coverImage` spectrum style)
+
+    /// Resolution the cover is sampled at. Each bar's slice has to hold enough
+    /// pixels for the per-slice vote to mean something — at eight bars and a
+    /// 12 % border inset this still leaves roughly 4 × 36 pixels per slice.
+    private static let barSampleSide: CGFloat = 48
+
+    /// Fraction of the cover ignored on every edge before it is split into
+    /// columns. The outermost columns otherwise sit right on the sleeve's
+    /// border — a frame, a vignette, the darkened edge of a photo — so the
+    /// first and last bar would take their colour from the one part of the
+    /// artwork that says nothing about it, and visibly break rank.
+    private static let barSampleInset: Double = 0.12
+
+    /// A hue must cover at least this share of the cover to earn a slot in the
+    /// palette — lower than `minimumDominantShare`, since a secondary colour
+    /// legitimately covers less ground than the dominant one.
+    private static let minimumPaletteShare: Double = 0.035
+
+    /// Minimum hue distance (0…0.5, i.e. up to 180°) between two palette
+    /// entries. Measured on hue rather than RGB because that is what decides
+    /// whether two entries read as *different colours*: a light and a dark blue
+    /// sit far apart in RGB but should still collapse into one bar colour,
+    /// while blue and green sit closer in RGB yet clearly deserve two slots.
+    private static let minimumPaletteHueSeparation: CGFloat = 0.05
+
+    /// Black/white/grey regions get their own palette slot once they cover this
+    /// much of the cover, instead of being snapped onto the nearest hue — white
+    /// lettering across a red sleeve should stay white, not turn pink.
+    private static let minimumNeutralShare: Double = 0.25
+
+    /// Saturation the neutral slot is drawn with when the cover has a hue to
+    /// borrow. Not zero: a pure-white bar beside coloured ones reads as a
+    /// different *thing*, and since the neutral regions are usually the cover's
+    /// background, that lands on the outermost bars and makes the wave look
+    /// broken at both ends. A washed-out version of the cover's own hue keeps
+    /// every bar in one family while still reading as "no colour here".
+    private static let neutralTintSaturation: CGFloat = 0.22
+
+    /// The region of the sampled grid the bars are cut from, with the border
+    /// inset already taken off (see `barSampleInset`).
+    private struct SampleGeometry {
+        let x0: Int, x1: Int, y0: Int, y1: Int
+        var usableX: Int { x1 - x0 }
+        var usableY: Int { y1 - y0 }
+
+        init(width: Int, height: Int) {
+            let insetX = Int(Double(width) * barSampleInset)
+            let insetY = Int(Double(height) * barSampleInset)
+            x0 = insetX
+            x1 = width - insetX
+            y0 = insetY
+            y1 = height - insetY
+        }
+    }
+
+    /// How dark the darkest brightness step draws, as a fraction of the palette
+    /// colour's own brightness. Not lower: these bars sit on a black notch, and
+    /// a genuinely dark one just looks like it is missing.
+    private static let barDarkestLevel: CGFloat = 0.68
+
+    /// The cell's brightness, snapped to `levels` steps and returned as 0…1.
+    /// A single level means "flat colour" and always returns the top step.
+    private static func brightnessLevel(of rgb: (r: CGFloat, g: CGFloat, b: CGFloat), levels: Int) -> CGFloat {
+        guard levels > 1 else { return 1 }
+        let v = max(rgb.r, max(rgb.g, rgb.b))
+        let step = min(CGFloat(levels - 1), (v * CGFloat(levels)).rounded(.down))
+        return step / CGFloat(levels - 1)
+    }
+
+    /// Two-stage quantisation, which is what makes the bars read as the cover
+    /// rather than as a smear of it:
+    ///
+    /// 1. **Globally**, the whole cover is reduced to at most
+    ///    `tuning.paletteSize` colours (plus a neutral slot where the sleeve
+    ///    has a large black/white/grey area). Every pixel is assigned to one.
+    /// 2. **Per bar**, the cover is cut into as many vertical slices as there
+    ///    are bars, and each slice elects the colour that covers the most of
+    ///    it. Top and bottom half vote separately, which is where the bar's
+    ///    faint gradient comes from.
+    ///
+    /// The election is the point. Averaging a slice first — what this used to
+    /// do — invents colours the sleeve doesn't contain (red lettering on white
+    /// averages to pink) and washes out exactly the covers with the most
+    /// character.
+    private static func barPalette(from data: Data, tuning: CoverBarTuning) -> CoverBarPalette? {
+        guard let (bitmap, width, height) = sample(data, side: barSampleSide),
+              width > 2, height > 3
+        else { return nil }
+
+        let geometry = SampleGeometry(width: width, height: height)
+
+        // A palette entry matches on the *raw* cover colour and draws as the
+        // vibrancy-boosted one — matching against the boosted version would
+        // measure the boost rather than the artwork.
+        let analysis = hueBuckets(from: data)
+        var palette: [(match: (r: CGFloat, g: CGFloat, b: CGFloat), color: Color)] = []
+        for bucket in (analysis?.buckets ?? []) where bucket.share >= minimumPaletteShare {
+            guard palette.count < tuning.paletteSize else { break }
+            // Neighbouring hue buckets often describe the same colour region
+            // (two shades of the same blue). Spending a palette slot on each
+            // would split bars that should read as one colour, so a new entry
+            // has to be visibly different from the ones already taken.
+            let hue = hue(of: bucket.rgb)
+            let tooClose = palette.contains { entry in
+                let d = abs(hue - self.hue(of: entry.match))
+                return min(d, 1 - d) < minimumPaletteHueSeparation
+            }
+            if tooClose { continue }
+            palette.append((bucket.rgb, barVibrant(bucket.rgb, tuning: tuning)))
+        }
+        if let analysis, analysis.neutralShare >= minimumNeutralShare {
+            let luma = analysis.neutralLuma
+            // Drawn brighter than measured — a mid-grey bar on the black notch
+            // reads as missing rather than as part of the wave — and tinted
+            // towards the cover's dominant hue where there is one.
+            let brightness = clamped(min(0.88, max(0.7, luma * 1.4)) * tuning.brightness)
+            let color = palette.first.map {
+                Color(hue: hue(of: $0.match), saturation: clamped(neutralTintSaturation * tuning.saturation), brightness: brightness)
+            } ?? Color(white: brightness)
+            palette.append(((luma, luma, luma), color))
+        }
+
+        // Stage one, global: every pixel of the cover is assigned to the palette
+        // entry it is closest to. From here on the cover *is* those few colours.
+        guard !palette.isEmpty else { return grayscaleBarPalette(bitmap: bitmap, width: width, geometry: geometry, tuning: tuning) }
+        var indexOf = [Int](repeating: 0, count: width * height)
+        var brightnessOf = [CGFloat](repeating: 0, count: width * height)
+        for y in geometry.y0..<geometry.y1 {
+            for x in geometry.x0..<geometry.x1 {
+                let i = (y * width + x) * 4
+                let rgb = (
+                    r: CGFloat(bitmap[i]) / 255,
+                    g: CGFloat(bitmap[i + 1]) / 255,
+                    b: CGFloat(bitmap[i + 2]) / 255
+                )
+                var best = 0
+                var bestDistance = CGFloat.greatestFiniteMagnitude
+                for (index, entry) in palette.enumerated() {
+                    let d = (entry.match.r - rgb.r) * (entry.match.r - rgb.r)
+                        + (entry.match.g - rgb.g) * (entry.match.g - rgb.g)
+                        + (entry.match.b - rgb.b) * (entry.match.b - rgb.b)
+                    if d < bestDistance { bestDistance = d; best = index }
+                }
+                indexOf[y * width + x] = best
+                brightnessOf[y * width + x] = max(rgb.r, max(rgb.g, rgb.b))
+            }
+        }
+
+        // Stage two, per bar: each bar owns a vertical slice of the cover and
+        // takes the colour that covers the most ground *within that slice* —
+        // a vote, not an average. Averaging was the flaw in the earlier
+        // version: a slice of red lettering on white averages to pink, which
+        // is a colour that appears nowhere on the sleeve. The winner here is
+        // always a colour the cover actually has, in the place the bar sits.
+        func barColor(x0: Int, x1: Int, y0: Int, y1: Int) -> Color {
+            var votes = [Int](repeating: 0, count: palette.count)
+            var brightnessSum = [CGFloat](repeating: 0, count: palette.count)
+            for y in y0..<y1 {
+                for x in x0..<x1 {
+                    let index = indexOf[y * width + x]
+                    votes[index] += 1
+                    brightnessSum[index] += brightnessOf[y * width + x]
+                }
+            }
+            guard let winner = votes.indices.max(by: { votes[$0] < votes[$1] }), votes[winner] > 0 else {
+                return palette[0].color
+            }
+            // Brightness comes from the winning colour's own pixels in this
+            // slice, so a bar over a shaded part of one flat colour still reads
+            // darker than a bar over its lit part.
+            let mean = brightnessSum[winner] / CGFloat(votes[winner])
+            let level = brightnessLevel(of: (mean, mean, mean), levels: tuning.brightnessLevels)
+            return shadedStep(palette[winner].color, level: level)
+        }
+
+        // Image rows run top-down, and so do the bars, so row 0 is the bar's top.
+        var bars: [Int: [CoverBarPalette.Bar]] = [:]
+        for count in CoverBarPalette.supportedBarCounts {
+            bars[count] = (0..<count).map { index in
+                let x0 = geometry.x0 + index * geometry.usableX / count
+                let x1 = max(x0 + 1, geometry.x0 + (index + 1) * geometry.usableX / count)
+                let midY = geometry.y0 + geometry.usableY / 2
+                return CoverBarPalette.Bar(
+                    top: barColor(x0: x0, x1: min(x1, geometry.x1), y0: geometry.y0, y1: max(geometry.y0 + 1, midY)),
+                    bottom: barColor(x0: x0, x1: min(x1, geometry.x1), y0: midY, y1: geometry.y1)
+                )
+            }
+        }
+        return CoverBarPalette(bars: bars)
+    }
+
+    /// The palette colour at one of `brightnessLevels` steps — same hue and
+    /// saturation, only the light changes, so bars sharing a colour still read
+    /// as one family.
+    private static func shadedStep(_ color: Color, level: CGFloat) -> Color {
+        let ns = NSColor(color).usingColorSpace(.deviceRGB) ?? NSColor(color)
+        var h: CGFloat = 0, s: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        ns.getHue(&h, saturation: &s, brightness: &b, alpha: &a)
+        return Color(hue: h, saturation: s, brightness: b * (barDarkestLevel + (1 - barDarkestLevel) * level))
+    }
+
+    /// Fallback for a cover with no dominant hue and no large neutral area:
+    /// the same per-slice vote, but over brightness steps alone, so the bars
+    /// go grey rather than borrowing a hue that isn't there.
+    private static func grayscaleBarPalette(
+        bitmap: [UInt8], width: Int, geometry: SampleGeometry, tuning: CoverBarTuning
+    ) -> CoverBarPalette {
+        func barColor(x0: Int, x1: Int, y0: Int, y1: Int) -> Color {
+            var sum: CGFloat = 0, n: CGFloat = 0
+            for y in y0..<y1 {
+                for x in x0..<x1 {
+                    let i = (y * width + x) * 4
+                    sum += 0.299 * CGFloat(bitmap[i]) / 255
+                        + 0.587 * CGFloat(bitmap[i + 1]) / 255
+                        + 0.114 * CGFloat(bitmap[i + 2]) / 255
+                    n += 1
+                }
+            }
+            let mean = n > 0 ? sum / n : 1
+            let level = brightnessLevel(of: (mean, mean, mean), levels: tuning.brightnessLevels)
+            return Color(white: clamped((0.55 + 0.4 * level) * tuning.brightness))
+        }
+
+        var bars: [Int: [CoverBarPalette.Bar]] = [:]
+        for count in CoverBarPalette.supportedBarCounts {
+            bars[count] = (0..<count).map { index in
+                let x0 = geometry.x0 + index * geometry.usableX / count
+                let x1 = max(x0 + 1, geometry.x0 + (index + 1) * geometry.usableX / count)
+                let midY = geometry.y0 + geometry.usableY / 2
+                return CoverBarPalette.Bar(
+                    top: barColor(x0: x0, x1: min(x1, geometry.x1), y0: geometry.y0, y1: max(geometry.y0 + 1, midY)),
+                    bottom: barColor(x0: x0, x1: min(x1, geometry.x1), y0: midY, y1: geometry.y1)
+                )
+            }
+        }
+        return CoverBarPalette(bars: bars)
+    }
+
+    private static func hue(of rgb: (r: CGFloat, g: CGFloat, b: CGFloat)) -> CGFloat {
+        var h: CGFloat = 0, s: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        NSColor(red: rgb.r, green: rgb.g, blue: rgb.b, alpha: 1).getHue(&h, saturation: &s, brightness: &b, alpha: &a)
+        return h
+    }
+
+    /// `vibrant` with a harder push, for the spectrum bars specifically: they
+    /// are a couple of points wide on a black notch, where the tint's own
+    /// brightness floor still comes out looking dim and glassy. Saturation stops
+    /// short of the maximum so the result stays a colour, not a neon.
+    private static func barVibrant(_ rgb: (r: CGFloat, g: CGFloat, b: CGFloat), tuning: CoverBarTuning) -> Color {
+        let ns = NSColor(red: rgb.r, green: rgb.g, blue: rgb.b, alpha: 1).usingColorSpace(.deviceRGB)
+        var h: CGFloat = 0, s: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        ns?.getHue(&h, saturation: &s, brightness: &b, alpha: &a)
+        let saturation = clamped(min(0.9, max(0.62, s * 1.6)) * tuning.saturation)
+        let brightness = clamped(min(0.96, max(0.84, b * 1.35)) * tuning.brightness)
+        return Color(hue: h, saturation: saturation, brightness: brightness)
+    }
+
+    private static func clamped(_ v: CGFloat) -> CGFloat { min(1, max(0, v)) }
 
     /// Boost the muddy average into something that reads as the cover's accent.
     private static func vibrant(_ rgb: (r: CGFloat, g: CGFloat, b: CGFloat)) -> Color {

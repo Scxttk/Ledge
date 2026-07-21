@@ -111,6 +111,42 @@ private struct NowPlayingSettings: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+
+            // Only meaningful for the Cover style, and best judged while a track
+            // is playing: every change recomputes the current cover's palette.
+            Section {
+                Stepper(value: $settings.coverPaletteSize, in: 1...5) {
+                    LabeledContent(
+                        String(localized: "settings.cover.paletteSize", defaultValue: "Farben"),
+                        value: "\(settings.coverPaletteSize)"
+                    )
+                }
+                Stepper(value: $settings.coverBrightnessLevels, in: 1...4) {
+                    LabeledContent(
+                        String(localized: "settings.cover.brightnessLevels", defaultValue: "Helligkeitsstufen"),
+                        value: "\(settings.coverBrightnessLevels)"
+                    )
+                }
+                LabeledContent(String(localized: "settings.cover.saturation", defaultValue: "Sättigung")) {
+                    Slider(value: $settings.coverBarSaturation, in: 0.5...1.4)
+                }
+                LabeledContent(String(localized: "settings.cover.brightness", defaultValue: "Helligkeit")) {
+                    Slider(value: $settings.coverBarBrightness, in: 0.5...1.2)
+                }
+                Button(String(localized: "settings.cover.reset", defaultValue: "Zurücksetzen")) {
+                    settings.coverPaletteSize = 4
+                    settings.coverBrightnessLevels = 3
+                    settings.coverBarSaturation = 1.0
+                    settings.coverBarBrightness = 1.0
+                }
+            } header: {
+                Text(String(localized: "settings.cover.header", defaultValue: "Cover-Stil"))
+            } footer: {
+                Text(String(localized: "settings.cover.hint", defaultValue: "Gilt nur für den Stil „Cover“. Änderungen wirken sofort auf den laufenden Titel — am besten bei spielender Musik einstellen."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .disabled(settings.spectrumStyle != .coverImage)
         }
         .formStyle(.grouped)
         .padding()
