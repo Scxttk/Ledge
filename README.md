@@ -7,6 +7,12 @@
 <p align="center">Your Mac's notch, doing something other than hiding a camera.</p>
 
 <p align="center">
+  <a href="../../releases/latest"><img src="https://img.shields.io/github/v/release/Scxttk/Ledge?style=flat-square&label=release" alt="Latest release"></a>
+  <img src="https://img.shields.io/badge/macOS-14%2B-black?style=flat-square" alt="macOS 14+">
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/Scxttk/Ledge?style=flat-square" alt="MIT license"></a>
+</p>
+
+<p align="center">
   <img src="assets/notch-expanded.png" width="620" alt="Ledge expanded into now-playing controls">
 </p>
 
@@ -27,14 +33,20 @@ Some of this is opinionated because I built it for myself first: the UI is in Ge
 Beyond that:
 
 - Now-playing for Spotify and Apple Music, driven by AppleScript rather than MediaRemote — Apple sealed that framework off in macOS 15.4, which broke pretty much every third-party notch app overnight. AppleScript means polling every 5 seconds with local interpolation in between, not instant, but it survives OS updates that private APIs don't.
+- A live audio spectrum in the pill and the music tab, fed by a CoreAudio system tap — real frequencies, not a canned animation. Five color styles, including one that quantises each bar onto the album cover's own palette, and a setting that drops the mini cover entirely for a wider twelve-bar wave.
 - A file shelf. Drag files onto the notch, drag them off later, wherever "later" ends up being. Tracked by bookmark, not path, so a rename or a reboot doesn't lose them.
 - Obsidian quick capture: ⌥⌘Space, type, and it's appended under a heading in today's daily note without Obsidian needing to be open. Point it at your vault in Settings first.
 - A pomodoro timer with named presets and auto-chaining, because I kept starting one in a phone app and then closing the phone app.
 - Small live-activity banners for charging, AirPods connecting, a file landing in the shelf — a few seconds, then gone.
+- A Claude tab that shows my usage limits and shifts the desktop app's model and effort like a gearbox. This is the one I use maybe once a week.
+
+Every tab can be switched off in Settings if you only came for some of this.
 
 ## Getting it running
 
-Grab `NotchMate.zip` from the [latest release](../../releases/latest), unzip it, drag `NotchMate.app` into `/Applications`.
+Grab `Ledge-x.y.z.zip` from the [latest release](../../releases/latest), unzip it, drag `NotchMate.app` into `/Applications`.
+
+Yes, the app inside the zip is called `NotchMate.app` — that was the project's old name, and the bundle keeps it on purpose: macOS ties the Automation and Accessibility grants to the app's identity, and renaming the bundle would silently kill them for everyone who already granted access (see the warning below). So the name on the tin is Ledge; the tin itself stays NotchMate.
 
 Gatekeeper will block the first launch — it's ad-hoc signed, since I'm not paying Apple 99 €/year to notarize a menu-bar toy. Either:
 
