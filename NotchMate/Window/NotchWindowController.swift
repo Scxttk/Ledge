@@ -8,6 +8,7 @@ final class NotchWindowController {
     private let shelf: FileShelfModel
     private let activities: ActivityManager
     private let pomodoro: PomodoroManager
+    private let spectrum: SpectrumAnalyzer
     private let container: NotchContainerView
 
     private var collapseWorkItem: DispatchWorkItem?
@@ -70,6 +71,7 @@ final class NotchWindowController {
         self.shelf = shelf
         self.activities = activities
         self.pomodoro = pomodoro
+        self.spectrum = spectrum
 
         let frame = NSRect(x: 0, y: 0, width: viewModel.panelWidth, height: viewModel.panelHeight)
         panel = NotchPanel(contentRect: frame)
@@ -255,6 +257,15 @@ final class NotchWindowController {
     /// `NotchContainerView.hitTest` actually accepts clicks within. Shared by
     /// `container.islandRect` (view-local) and `interactiveScreenRect` (screen
     /// coordinates) so the two never drift apart.
+    /// Mirrors `NotchRootView.hasAudioHero`: the pill widens for the audio hero
+    /// not only while a scriptable player reports `isPlaying`, but also while
+    /// any other system audio keeps the spectrum alive. The hit/hover rects
+    /// must use the same condition, or the visible pill grows wider than the
+    /// area that reacts to the cursor.
+    private var hasAudioHero: Bool {
+        nowPlaying.isPlaying || spectrum.hasSignal
+    }
+
     private func currentIslandSize() -> (width: CGFloat, height: CGFloat) {
         // Stay at the expanded footprint through the whole staged walk, not
         // only at the terminal `.expanded` state — otherwise clicks fall
@@ -264,7 +275,7 @@ final class NotchWindowController {
         }
         // Hug the visible pill (which sizes to its content) plus a small
         // tolerance, so it only expands when hovering the notch itself.
-        let width = viewModel.collapsedWidth(isPlaying: nowPlaying.isPlaying, hasItems: !shelf.items.isEmpty, timerText: pomodoro.pillText) + NotchLayout.hitTestWidthPadding
+        let width = viewModel.collapsedWidth(isPlaying: hasAudioHero, hasItems: !shelf.items.isEmpty, timerText: pomodoro.pillText) + NotchLayout.hitTestWidthPadding
         let height = viewModel.collapsedHeight + NotchLayout.hitTestHeightPadding
         return (width, height)
     }
@@ -309,7 +320,7 @@ final class NotchWindowController {
             width = viewModel.expandedWidth + NotchLayout.expandedHoverInset * 2
             height = viewModel.expandedHeight + NotchLayout.expandedHoverInset
         } else {
-            width = viewModel.collapsedWidth(isPlaying: nowPlaying.isPlaying, hasItems: !shelf.items.isEmpty, timerText: pomodoro.pillText) + NotchLayout.collapsedHoverInset * 2
+            width = viewModel.collapsedWidth(isPlaying: hasAudioHero, hasItems: !shelf.items.isEmpty, timerText: pomodoro.pillText) + NotchLayout.collapsedHoverInset * 2
             height = viewModel.collapsedHeight + NotchLayout.collapsedHoverInset
         }
         // The island floats `islandTopGap` below the edge, but the hover zone
