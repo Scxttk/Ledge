@@ -118,10 +118,10 @@ enum NotchLayout {
     /// How long the condensing stage (label fades, icon centres, capsule
     /// narrows to pill width) runs before the pill content swaps in — roughly
     /// the collapse spring's settling time, so the swap lands on a still image.
-    static let condenseSwapDelay: TimeInterval = 0.34
+    static let condenseSwapDelay: TimeInterval = 0.32
     static let condenseExpandDelay: TimeInterval = 0.1   // .condensing → .solo
-    static let soloExpandDelay: TimeInterval = 0.12      // .solo → .band
-    static let bandExpandDelay: TimeInterval = 0.14      // .band → .expanded
+    static let soloExpandDelay: TimeInterval = 0.10      // .solo → .band
+    static let bandExpandDelay: TimeInterval = 0.12      // .band → .expanded
 
     /// Fade of the labels and the unselected tabs as the capsule narrows around
     /// the surviving content. Deliberately much faster than the width spring:
@@ -225,31 +225,41 @@ enum NotchLayout {
     static let tabSwipeGestureGap: TimeInterval = 0.25
 
     /// Silhouette morph for live-activity pills appearing/dismissing in the
-    /// collapsed pill (not the expand/collapse walk). A small, lively spring.
-    static let islandMorphAnimation: Animation = .spring(response: 0.42, dampingFraction: 0.84)
+    /// collapsed pill (not the expand/collapse walk). A small, lively spring —
+    /// damping low enough for a visible snap, like the iPhone's island pills.
+    static let islandMorphAnimation: Animation = .spring(response: 0.40, dampingFraction: 0.74)
 
     /// Silhouette morph (frame + corner radius) for each *collapse* stage. A
     /// bounce-free `.smooth` spring: collapsing reads as a calm, silky settling,
-    /// never a snap or wobble.
-    static let islandCollapseAnimation: Animation = .smooth(duration: 0.6)
-    /// Same for each *expand* stage — the mirror of the collapse, but notably
-    /// quicker so opening on hover feels snappy, still bounce-free.
-    static let islandExpandAnimation: Animation = .smooth(duration: 0.34)
+    /// never a snap or wobble — overshoot on *closing* looks wrong.
+    static let islandCollapseAnimation: Animation = .smooth(duration: 0.55)
+    /// Each *intermediate* expand stage — quicker than the collapse so opening
+    /// on hover feels snappy, with a whisper of bounce for life. These hops are
+    /// re-animated almost immediately, so real overshoot would just wobble.
+    static let islandExpandAnimation: Animation = .snappy(duration: 0.30, extraBounce: 0.1)
+    /// The *final* expand hop (`.band → .expanded`) is the only one that rests,
+    /// so it can afford a genuine overshoot-and-settle — the Dynamic-Island
+    /// "pop" that the intermediate hops must not have.
+    static let islandExpandFinalAnimation: Animation = .spring(response: 0.42, dampingFraction: 0.70)
 
     /// Content fade-in on expand: slightly delayed so it appears once the
-    /// silhouette has grown enough room, then a quick easeOut.
-    static let contentInsertAnimation: Animation = .easeOut(duration: 0.20).delay(0.06)
+    /// silhouette has grown enough room, then springs out of the pill with the
+    /// same character as the silhouette's final pop.
+    static let contentInsertAnimation: Animation = .spring(response: 0.35, dampingFraction: 0.75).delay(0.05)
     /// Content fade-out on collapse: fast easeIn so the content is gone *before*
     /// the silhouette finishes shrinking (nothing lingers outside the shape).
     /// Long enough that the active tab glyph's matched-geometry flight into the
-    /// pill is readable before the rest fades.
+    /// pill is readable before the rest fades. Never springy — removal that
+    /// bounces reads as broken.
     static let contentRemoveAnimation: Animation = .easeIn(duration: 0.16)
-    /// Starting scale of inserted content — a subtle "grow out of the pill" morph.
-    static let contentMorphScale: CGFloat = 0.96
+    /// Starting scale of inserted content — the "grow out of the pill" morph,
+    /// pronounced enough to register now that the insert is a spring.
+    static let contentMorphScale: CGFloat = 0.93
 
     /// Switching tabs (tap button and horizontal swipe both use it) — drives the
-    /// page carousel offset and the tab bar's sliding selection capsule.
-    static let tabChangeAnimation: Animation = .spring(response: 0.38, dampingFraction: 0.82)
+    /// page carousel offset and the tab bar's sliding selection capsule. A hint
+    /// of overshoot; the pages are clipped, so it can't escape the island.
+    static let tabChangeAnimation: Animation = .spring(response: 0.35, dampingFraction: 0.74)
 
     /// Scale of the tab pages that aren't front — they sit slightly shrunken and
     /// dimmed beside the active page and grow in as they slide to front.

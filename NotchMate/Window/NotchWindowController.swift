@@ -626,7 +626,15 @@ final class NotchWindowController {
             // its own explicit clock (no crossfade dip).
             viewModel.islandState = .collapsed
         } else {
-            withAnimation(expanding ? NotchLayout.islandExpandAnimation : NotchLayout.islandCollapseAnimation) {
+            // The final expand hop is the only stage that rests, so it alone
+            // gets the overshoot-and-settle spring; intermediate hops are
+            // re-animated right away and would turn overshoot into wobble.
+            let animation: Animation = if expanding {
+                next == .expanded ? NotchLayout.islandExpandFinalAnimation : NotchLayout.islandExpandAnimation
+            } else {
+                NotchLayout.islandCollapseAnimation
+            }
+            withAnimation(animation) {
                 viewModel.islandState = next
             }
         }
