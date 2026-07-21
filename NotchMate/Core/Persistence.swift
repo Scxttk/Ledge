@@ -11,7 +11,11 @@ enum Persistence {
 
     /// `~/Library/Application Support/NotchMate/`
     static let supportDirectory: URL = {
-        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        // The standard directories are always present in practice, but these
+        // statics run on the launch path — degrading to a temp directory beats
+        // crashing before the app has drawn anything.
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? FileManager.default.temporaryDirectory
         let dir = base.appendingPathComponent("NotchMate", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir
@@ -19,7 +23,8 @@ enum Persistence {
 
     /// `~/Library/Caches/NotchMate/thumbnails/`
     static let thumbnailCacheDirectory: URL = {
-        let base = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
+        let base = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
+            ?? FileManager.default.temporaryDirectory
         let dir = base.appendingPathComponent("NotchMate/thumbnails", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir

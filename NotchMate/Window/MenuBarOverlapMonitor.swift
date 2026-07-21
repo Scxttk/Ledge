@@ -86,8 +86,14 @@ final class MenuBarOverlapMonitor {
               let menuBarElement = menuBarValue
         else { return nil }
 
+        // The AX API returns CFTypeRef; check the type IDs instead of
+        // force-casting so an unexpected shape reads as "no menu bar found"
+        // (fails open — the notch stays visible) rather than a crash.
+        guard CFGetTypeID(menuBarElement) == AXUIElementGetTypeID() else { return nil }
+        let menuBar = unsafeDowncast(menuBarElement, to: AXUIElement.self)
+
         var childrenValue: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(menuBarElement as! AXUIElement, kAXChildrenAttribute as CFString, &childrenValue) == .success,
+        guard AXUIElementCopyAttributeValue(menuBar, kAXChildrenAttribute as CFString, &childrenValue) == .success,
               let children = childrenValue as? [AXUIElement],
               let lastItem = children.last
         else { return nil }
@@ -95,13 +101,15 @@ final class MenuBarOverlapMonitor {
         var positionValue: CFTypeRef?
         var sizeValue: CFTypeRef?
         guard AXUIElementCopyAttributeValue(lastItem, kAXPositionAttribute as CFString, &positionValue) == .success,
-              AXUIElementCopyAttributeValue(lastItem, kAXSizeAttribute as CFString, &sizeValue) == .success
+              AXUIElementCopyAttributeValue(lastItem, kAXSizeAttribute as CFString, &sizeValue) == .success,
+              let positionValue, CFGetTypeID(positionValue) == AXValueGetTypeID(),
+              let sizeValue, CFGetTypeID(sizeValue) == AXValueGetTypeID()
         else { return nil }
 
         var position = CGPoint.zero
         var size = CGSize.zero
-        guard AXValueGetValue((positionValue as! AXValue), .cgPoint, &position),
-              AXValueGetValue((sizeValue as! AXValue), .cgSize, &size)
+        guard AXValueGetValue(unsafeDowncast(positionValue, to: AXValue.self), .cgPoint, &position),
+              AXValueGetValue(unsafeDowncast(sizeValue, to: AXValue.self), .cgSize, &size)
         else { return nil }
 
         return position.x + size.width
