@@ -319,6 +319,19 @@ enum ArtworkColor {
     private static let minimumTertiaryShare: Double = 0.04
     private static let minimumTertiaryHueDistance: CGFloat = 0.125
 
+    /// Neutral competes with the hue winner: a mostly-white/grey sleeve with
+    /// an incidental face wins for the *skin tone* under pure hue voting,
+    /// because grey pixels can't vote at all — and amplified skin orange is
+    /// exactly the accent nobody wants. The contest weighs the winner's
+    /// share by its *squared* saturation — squared because that separates
+    /// pale from vivid decisively (0.35² = 0.12 vs 0.9² = 0.81): a vivid red
+    /// logo on white keeps winning, a pale face doesn't — against the neutral
+    /// area scaled by this bias.
+    private static let neutralBias = 0.14
+    /// Below this much neutral area the contest is moot — the cover is a
+    /// colour cover.
+    private static let minimumNeutralContestShare = 0.35
+
     /// The accents that dominate the artwork. `primary` falls back to a muted
     /// tint (near-monochrome cover) or white (no hue at all); nil only when
     /// the image couldn't be read/decoded. Internal rather than private so the
@@ -332,6 +345,16 @@ enum ArtworkColor {
             let primary = winner.share >= minimumMutedShare ? mutedTint(winner.rgb) : .white
             return ArtworkAccents(primary: primary, secondary: nil)
         }
+
+        // The neutral contest (see `neutralBias`): on a mostly-white/grey
+        // sleeve whose strongest hue is weak — a face, a warm cast — the
+        // honest accent is silver-white, not saturated skin.
+        if analysis.neutralShare >= minimumNeutralContestShare,
+           analysis.neutralShare * neutralBias > winner.share * pow(Double(saturation(of: winner.rgb)), 2) {
+            let luma = max(0.88, min(0.98, analysis.neutralLuma + 0.35))
+            return ArtworkAccents(primary: Color(hue: 0, saturation: 0, brightness: luma), secondary: nil)
+        }
+
         let winnerHue = hue(of: winner.rgb)
         func hueDistance(_ a: CGFloat, _ b: CGFloat) -> CGFloat {
             let d = abs(a - b)
@@ -608,6 +631,12 @@ enum ArtworkColor {
         var h: CGFloat = 0, s: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
         NSColor(red: rgb.r, green: rgb.g, blue: rgb.b, alpha: 1).getHue(&h, saturation: &s, brightness: &b, alpha: &a)
         return h
+    }
+
+    private static func saturation(of rgb: (r: CGFloat, g: CGFloat, b: CGFloat)) -> CGFloat {
+        var h: CGFloat = 0, s: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        NSColor(red: rgb.r, green: rgb.g, blue: rgb.b, alpha: 1).getHue(&h, saturation: &s, brightness: &b, alpha: &a)
+        return s
     }
 
     /// `vibrant` with a harder push, for the spectrum bars specifically: they

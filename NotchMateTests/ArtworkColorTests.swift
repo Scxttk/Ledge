@@ -66,6 +66,38 @@ final class ArtworkColorTests: XCTestCase {
         XCTAssertEqual(hue, 0.63, accuracy: 0.12, "the tint should keep the blue cast's hue, got \(hue)")
     }
 
+    func testAFaceOnAWhiteSleeveYieldsSilverNotSkinOrange() throws {
+        // Mostly white/grey with a large pale skin-tone region — the layout of
+        // countless portrait covers. Pure hue voting picks the skin (grey
+        // can't vote) and stage-vivids it into orange; the honest accent for
+        // this sleeve is neutral.
+        let data = try pngCover { ctx in
+            ctx.setFillColor(CGColor(red: 0.93, green: 0.93, blue: 0.93, alpha: 1))
+            ctx.fill(CGRect(x: 0, y: 0, width: 64, height: 64))
+            ctx.setFillColor(CGColor(red: 0.85, green: 0.66, blue: 0.55, alpha: 1))
+            ctx.fill(CGRect(x: 18, y: 14, width: 30, height: 36))
+        }
+        let accents = try XCTUnwrap(ArtworkColor.accents(from: data))
+        let (_, saturation, brightness) = try hsb(accents.primary)
+        XCTAssertLessThanOrEqual(saturation, 0.05, "a pale face must not become the accent (saturation \(saturation))")
+        XCTAssertGreaterThanOrEqual(brightness, 0.85)
+    }
+
+    func testAVividLogoOnAWhiteSleeveStillWins() throws {
+        // The counter-case the neutral contest must not break: a saturated red
+        // mark on white is a deliberate accent and should tint the wave.
+        let data = try pngCover { ctx in
+            ctx.setFillColor(CGColor(red: 0.93, green: 0.93, blue: 0.93, alpha: 1))
+            ctx.fill(CGRect(x: 0, y: 0, width: 64, height: 64))
+            ctx.setFillColor(CGColor(red: 0.85, green: 0.08, blue: 0.1, alpha: 1))
+            ctx.fill(CGRect(x: 20, y: 20, width: 26, height: 26))
+        }
+        let accents = try XCTUnwrap(ArtworkColor.accents(from: data))
+        let (hue, saturation, _) = try hsb(accents.primary)
+        XCTAssertTrue(hue < 0.08 || hue > 0.92, "the red mark should win (hue \(hue))")
+        XCTAssertGreaterThanOrEqual(saturation, 0.30)
+    }
+
     func testTwoColourCoverYieldsBothAccentsAndNeverBrown() throws {
         // Half red, half green — the failure mode of averaging is brown.
         let data = try pngCover { ctx in
