@@ -297,6 +297,26 @@ final class SpectrumAnalyzer: ObservableObject {
         publishIfDue()
     }
 
+    #if DEBUG
+    /// Test entry: slides mono `samples` into the analysis window and runs the
+    /// same band computation the tap drives, returning the smoothed levels.
+    /// Exists because the dB→bar mapping is exactly the part that regressed
+    /// silently once before (bars standing still on compressed masters) — a
+    /// test can feed synthetic "music" through the real FFT path and measure
+    /// whether the bars actually move.
+    func ingestForTesting(_ samples: [Float]) -> [Float] {
+        if samples.count >= fftSize {
+            for i in 0..<fftSize { sampleBuffer[i] = samples[samples.count - fftSize + i] }
+        } else {
+            let keep = fftSize - samples.count
+            for i in 0..<keep { sampleBuffer[i] = sampleBuffer[i + samples.count] }
+            for i in 0..<samples.count { sampleBuffer[keep + i] = samples[i] }
+        }
+        computeBands()
+        return smoothed
+    }
+    #endif
+
     private func computeBands() {
         guard let fftSetup else { return }
         vDSP_vmul(sampleBuffer, 1, window, 1, &windowed, 1, vDSP_Length(fftSize))
