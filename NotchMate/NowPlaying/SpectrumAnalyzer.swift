@@ -82,7 +82,6 @@ final class SpectrumAnalyzer: ObservableObject {
     // so each track's own dynamic range gets used regardless of its overall
     // loudness.
     private var loudnessCeilDb: Float = 40   // seeded at the old static ceiling so the first second isn't blank
-    private var lastLoudnessUpdate: CFTimeInterval = 0
     private static let loudnessAttack: Float = 0.5        // fraction of the way to a new peak, per callback
     private static let loudnessReleasePerSecond: Float = 6 // dB/s the ceiling falls once the signal quiets down
     private static let loudnessCeilMin: Float = 10          // never let a silent stretch collapse the window
@@ -297,7 +296,7 @@ final class SpectrumAnalyzer: ObservableObject {
             for i in 0..<frames { sampleBuffer[keep + i] = ptr[i * channels] }
         }
 
-        computeBands()
+        computeBands(audioDt: Float(Double(frames) / sampleRate))
         publishIfDue()
     }
 
@@ -316,12 +315,17 @@ final class SpectrumAnalyzer: ObservableObject {
             for i in 0..<keep { sampleBuffer[i] = sampleBuffer[i + samples.count] }
             for i in 0..<samples.count { sampleBuffer[keep + i] = samples[i] }
         }
-        computeBands()
+        computeBands(audioDt: Float(Double(samples.count) / 48_000))
         return smoothed
     }
     #endif
 
-    private func computeBands() {
+    /// `audioDt`: duration of the audio this callback delivered. The window
+    /// release and the running averages tick on *audio* time, not the wall
+    /// clock — in production the two coincide (the tap delivers in real time),
+    /// but audio time is deterministic under callback jitter and lets tests
+    /// feed audio faster than real time without freezing the time constants.
+    private func computeBands(audioDt: Float) {
         guard let fftSetup else { return }
         vDSP_vmul(sampleBuffer, 1, window, 1, &windowed, 1, vDSP_Length(fftSize))
 
@@ -364,9 +368,7 @@ final class SpectrumAnalyzer: ObservableObject {
         // clipping, slow release so it doesn't chase every quiet beat within
         // a song — only settles down once the track itself has been quieter
         // for a couple of seconds.
-        let now = CACurrentMediaTime()
-        let dt = lastLoudnessUpdate == 0 ? 0 : Float(now - lastLoudnessUpdate)
-        lastLoudnessUpdate = now
+        let dt = audioDt
         let framePeakDb = rawDb.max() ?? loudnessCeilDb
         if framePeakDb > loudnessCeilDb {
             loudnessCeilDb += (framePeakDb - loudnessCeilDb) * Self.loudnessAttack
