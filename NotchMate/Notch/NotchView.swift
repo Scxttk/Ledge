@@ -373,6 +373,23 @@ private struct ExpandedView: View {
     }
 }
 
+/// A tab's glyph: its SF Symbol, or its emoji where none exists (the Claude
+/// tab's crab). Emoji ignore `foregroundStyle`, so the dimming the symbols get
+/// from the surrounding style is applied here as opacity.
+private struct TabIcon: View {
+    let tab: NotchViewModel.Tab
+    var dimmed = false
+
+    var body: some View {
+        if let emoji = tab.emojiIcon {
+            Text(emoji)
+                .opacity(dimmed ? Double(NotchLayout.tabInactiveOpacity) : 1)
+        } else {
+            Image(systemName: tab.icon)
+        }
+    }
+}
+
 private struct NotchTabBar: View {
     @Binding var selection: NotchViewModel.Tab
     /// When false (`.solo`/`.condensing`), only the selected tab is present —
@@ -386,13 +403,13 @@ private struct NotchTabBar: View {
     var body: some View {
         HStack(spacing: NotchLayout.tabBarSpacing) {
             ForEach(NotchViewModel.enabledTabs, id: \.self) { value in
-                tab(title: value.title, icon: value.icon, value: value)
+                tab(title: value.title, value: value)
             }
         }
     }
 
     @ViewBuilder
-    private func tab(title: String, icon: String, value: NotchViewModel.Tab) -> some View {
+    private func tab(title: String, value: NotchViewModel.Tab) -> some View {
         if showsAllTabs || selection == value {
             let isSelected = selection == value
             // Solo/condensing (this is the only tab): pin the *icon* at the
@@ -419,7 +436,7 @@ private struct NotchTabBar: View {
                     // Every icon renders itself, always — switching tabs must only
                     // change the highlight (foreground opacity), never replace or
                     // move the icon view, or it visibly pops back in.
-                    Image(systemName: icon)
+                    TabIcon(tab: value, dimmed: !isSelected)
                     // The label stays in the layout even when hidden (fixed size,
                     // opacity only) so the mirror stays balanced; it just fades
                     // fast while the capsule narrows over it.
@@ -460,9 +477,6 @@ private struct CollapsedView: View {
     /// flat white wave next to a colourful app icon.
     @State private var sourceAppTint: Color?
 
-    /// Idle glyph reflects the tab you'd return to, so it isn't always the music
-    /// note when you last used another tab.
-    private var idleIcon: String { viewModel.selectedTab.icon }
 
     /// The accent to tint the wave with: the real track's accent when we're
     /// actually showing that track's cover, else the source app icon's accent
@@ -586,7 +600,9 @@ private struct CollapsedView: View {
                     .transition(.opacity)
                 }
             } else if pomodoro.pillText == nil {
-                Image(systemName: idleIcon)
+                // Idle glyph reflects the tab you'd return to, so it isn't
+                // always the music icon when you last used another tab.
+                TabIcon(tab: viewModel.selectedTab)
                     .font(.system(size: NotchLayout.bandFontSize, weight: .medium))
             }
 

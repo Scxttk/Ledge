@@ -21,12 +21,19 @@ final class NotchViewModel: ObservableObject {
 
         var icon: String {
             switch self {
-            case .music:   return "music.note"
+            case .music:   return "waveform"   // the app's own identity, not a note
             case .files:   return "tray.full"
             case .capture: return "square.and.pencil"
             case .timer:   return "timer"
-            case .claude:  return "steeringwheel"
+            case .claude:  return "steeringwheel"   // fallback; rendered as the 🦀 (see TabIcon)
             }
+        }
+
+        /// Tabs whose icon is an emoji glyph instead of an SF Symbol — SF
+        /// Symbols simply doesn't stock a crab, and the Claude tab gets
+        /// Claude Code's crab.
+        var emojiIcon: String? {
+            self == .claude ? "🦀" : nil
         }
     }
 
