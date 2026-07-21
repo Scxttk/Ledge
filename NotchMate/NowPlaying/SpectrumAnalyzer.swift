@@ -115,6 +115,17 @@ final class SpectrumAnalyzer: ObservableObject {
     /// Mix of deviation-from-average vs absolute level in the published bar.
     private static let beatWeight: Float = 0.72
 
+    // Dormancy: the tap keeps delivering callbacks during silence — most of
+    // the day, for most people — and running a 1024-point FFT ~46× a second
+    // against digital zeroes is exactly the "erhöhter Energieverbrauch"
+    // Battery settings pins on the app. A cheap peak scan gates the FFT: after
+    // a couple of silent seconds the analysis sleeps and each callback costs
+    // one buffer scan; the first non-silent sample wakes it instantly.
+    private var silentSeconds: Float = 0
+    private var isDormant = false
+    private static let dormancyAfterSeconds: Float = 2
+    private static let dormancyPeakGate: Float = 1e-4
+
     private let queue = DispatchQueue(label: "com.scott.notchmate.spectrum", qos: .userInitiated)
 
     init(bandCount: Int = 6) {
@@ -287,16 +298,40 @@ final class SpectrumAnalyzer: ObservableObject {
         guard frames > 0 else { return }
         let ptr = raw.bindMemory(to: Float.self, capacity: frames * channels)
 
-        // Slide the window and append the newest frames (channel 0).
-        if frames >= fftSize {
-            for i in 0..<fftSize { sampleBuffer[i] = ptr[(frames - fftSize + i) * channels] }
+        let audioDt = Float(Double(frames) / sampleRate)
+
+        // Dormancy gate (see the properties above): scan the incoming block's
+        // peak before doing any real work.
+        var framePeak: Float = 0
+        for i in 0..<frames {
+            let v = abs(ptr[i * channels])
+            if v > framePeak { framePeak = v }
+        }
+        if framePeak < Self.dormancyPeakGate {
+            silentSeconds += audioDt
+            if !isDormant, silentSeconds >= Self.dormancyAfterSeconds {
+                isDormant = true
+                for i in smoothed.indices { smoothed[i] = 0 }
+            }
         } else {
-            let keep = fftSize - frames
-            for i in 0..<keep { sampleBuffer[i] = sampleBuffer[i + frames] }
-            for i in 0..<frames { sampleBuffer[keep + i] = ptr[i * channels] }
+            silentSeconds = 0
+            isDormant = false
         }
 
-        computeBands(audioDt: Float(Double(frames) / sampleRate))
+        if !isDormant {
+            // Slide the window and append the newest frames (channel 0).
+            if frames >= fftSize {
+                for i in 0..<fftSize { sampleBuffer[i] = ptr[(frames - fftSize + i) * channels] }
+            } else {
+                let keep = fftSize - frames
+                for i in 0..<keep { sampleBuffer[i] = sampleBuffer[i + frames] }
+                for i in 0..<frames { sampleBuffer[keep + i] = ptr[i * channels] }
+            }
+            computeBands(audioDt: audioDt)
+        }
+
+        // Always runs — its change gate makes it nearly free while dormant,
+        // and it is what lets the hasSignal hold expire after silence.
         publishIfDue()
     }
 
@@ -433,13 +468,25 @@ final class SpectrumAnalyzer: ObservableObject {
         }
     }
 
-    /// Publish to SwiftUI at ~30 fps regardless of the (faster) audio callback.
+    /// Last levels actually handed to SwiftUI, for the change gate below.
+    private var lastPublished: [Float] = []
+
+    /// Publish to SwiftUI at ~30 fps regardless of the (faster) audio callback
+    /// — but only when something the UI shows would actually change. Without
+    /// the gate, silence still cost 30 main-thread updates a second for an
+    /// unchanged all-zero wave; with it, a quiet system reduces the publisher
+    /// to a float comparison.
     private func publishIfDue() {
         let now = CACurrentMediaTime()
         guard now - lastPublish >= 1.0 / 30 else { return }
-        lastPublish = now
-        let snapshot = spatiallySmoothed(smoothed).map { CGFloat($0) }
         let signalNow = now - lastSignalTime < Self.signalHoldSeconds
+        let changed = signalNow != hasSignal
+            || lastPublished.count != smoothed.count
+            || zip(smoothed, lastPublished).contains { abs($0 - $1) > 0.004 }
+        guard changed else { return }
+        lastPublish = now
+        lastPublished = smoothed
+        let snapshot = spatiallySmoothed(smoothed).map { CGFloat($0) }
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             self.bands = snapshot
