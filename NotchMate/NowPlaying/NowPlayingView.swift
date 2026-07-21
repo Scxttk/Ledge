@@ -440,6 +440,16 @@ struct WaveBarsView: View {
     /// a touch (was 3) so the quietest bar still reads as "there".
     private var floorHeight: CGFloat { max(4, maxHeight * 0.14) }
 
+    /// Height envelope across the run: full in the middle, tapering toward
+    /// both ends (edges reach ~45%), so the wave has a *shape* — a crest that
+    /// swells and falls — instead of a rectangle of equally tall bars. The
+    /// low exponent keeps the top flat-ish; only the outer few bars duck.
+    private func envelope(forBarAt index: Int, total: Int) -> CGFloat {
+        guard total > 1 else { return 1 }
+        let t = CGFloat(index) / CGFloat(total - 1)
+        return 0.45 + 0.55 * pow(sin(.pi * t), 0.6)
+    }
+
     /// Fit the source bands to `count` bars: pass through when they match, else
     /// group into `count` buckets (max per bucket keeps the punch) so the tiny
     /// collapsed pill can show 3 bars from the 5-band spectrum.
@@ -461,7 +471,8 @@ struct WaveBarsView: View {
             let values = fitted(bands)
             HStack(alignment: .center, spacing: spacing) {
                 ForEach(values.indices, id: \.self) { i in
-                    bar(max(floorHeight, maxHeight * values[i]), level: values[i], index: i, total: values.count)
+                    bar(max(floorHeight, maxHeight * values[i] * envelope(forBarAt: i, total: values.count)),
+                        level: values[i], index: i, total: values.count)
                 }
             }
             .frame(maxHeight: .infinity, alignment: .center)
@@ -476,7 +487,8 @@ struct WaveBarsView: View {
                 HStack(alignment: .center, spacing: spacing) {
                     ForEach(0..<count, id: \.self) { index in
                         let height = proceduralHeight(index: index, time: time)
-                        bar(height, level: maxHeight > 0 ? height / maxHeight : 0, index: index, total: count)
+                        bar(max(floorHeight, height * envelope(forBarAt: index, total: count)),
+                            level: maxHeight > 0 ? height / maxHeight : 0, index: index, total: count)
                     }
                 }
                 .frame(maxHeight: .infinity, alignment: .center)
