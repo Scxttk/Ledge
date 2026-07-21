@@ -105,12 +105,16 @@ final class SpectrumAnalyzer: ObservableObject {
     private var averageSeeded = false
     /// Seconds for a band's running average to absorb a level change.
     private static let averageTau: Float = 1.6
-    /// Where "exactly average" sits (offset/range ≈ 0.45) and how many dB a
-    /// beat needs above its band's norm to reach the top.
-    private static let beatOffsetDb: Float = 5
-    private static let beatRangeDb: Float = 11
+    /// Where "exactly average" sits (offset/range ≈ 0.39) and how many dB a
+    /// beat needs above its band's norm to reach the top. Voice gets its
+    /// drama for free — pauses swing every band from zero to full — while
+    /// music holds energy continuously, so between beats a band sits exactly
+    /// at its average: this resting point *is* the trough depth. Kept low and
+    /// the window narrow so sustained music still breathes visibly.
+    private static let beatOffsetDb: Float = 3.5
+    private static let beatRangeDb: Float = 9
     /// Mix of deviation-from-average vs absolute level in the published bar.
-    private static let beatWeight: Float = 0.65
+    private static let beatWeight: Float = 0.72
 
     private let queue = DispatchQueue(label: "com.scott.notchmate.spectrum", qos: .userInitiated)
 

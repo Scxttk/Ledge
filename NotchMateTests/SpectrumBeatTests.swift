@@ -58,7 +58,8 @@ final class SpectrumBeatTests: XCTestCase {
         // The visible swing a 5 dB kick produces. Under the old absolute
         // mapping this was ~5/26 ≈ 0.19 of the bar at best — bars that barely
         // twitch. The beat-emphasis mapping must at least double that.
-        XCTAssertGreaterThanOrEqual(peak - trough, 0.35,
+        print("SpectrumBeatTests swing: peak \(peak), trough \(trough), swing \(peak - trough)")
+        XCTAssertGreaterThanOrEqual(peak - trough, 0.5,
             "a 5 dB kick should visibly move the bar (peak \(peak), trough \(trough))")
     }
 
