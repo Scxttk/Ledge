@@ -10,9 +10,11 @@ that had been hiding since the spectrum tap learned to hear non-music audio.
 
 ### Added
 - **Spectrum-only pill.** A new toggle in the now-playing settings replaces the
-  mini cover in the collapsed pill with sixteen bars — one per analyzer band —
-  in a wider, slightly taller pill. This mode exists to be watched, so it
-  takes the room it needs. The music tab keeps its cover.
+  mini cover in the collapsed pill with a wider, slightly taller wave. This
+  mode exists to be watched, so it takes the room it needs — and it comes with
+  two controls: bar count (6–24, at 24 every bar is its own analyzer band) and
+  pill width (36–140pt); the bars spread evenly, so fewer bars means wider
+  gaps. The music tab keeps its cover.
 - **Claude tab**: usage limits at a glance plus a gearbox-style shifter for
   model/effort/mode of the Claude desktop app.
 - **Per-tab visibility toggles** — hide the tabs you never open.
@@ -28,8 +30,14 @@ that had been hiding since the spectrum tap learned to hear non-music audio.
 - Cover accents are tone-mapped instead of floored: muted sleeves stay muted
   instead of turning neon, black-and-white covers with a faint color cast get
   that cast as a washed-out tint instead of plain white, and the
-  gradient/alternating styles use a second color the sleeve actually contains
-  when it has one.
+  gradient/alternating styles use up to two more colors the sleeve actually
+  contains when it has them.
+- Neutral can win the accent now. A mostly-white sleeve with a face used to
+  tint the whole wave skin-orange, because grey pixels couldn't vote; when the
+  neutral area outweighs the strongest hue's vividness, the wave goes luminous
+  silver-white instead. A bold red logo on white still wins.
+- The wave tapers toward its edges (full crest in the middle, ~45% at the
+  rims), so it reads as a swell instead of a rectangle.
 - The island opens with a visible overshoot-and-settle now, like the iPhone's.
   Closing stays deliberately calm — overshoot on the way out reads wrong.
 - The spectrum got stage lighting: no more grey-washed edge bars (the Shades
@@ -42,8 +50,16 @@ that had been hiding since the spectrum tap learned to hear non-music audio.
   master that barely moves in absolute dB.
 - New tab glyphs: the music tab wears the app's waveform instead of a generic
   note, and the Claude tab got Claude Code's crab.
-- The spectrum analyzer resolves 16 bands (was 6), enough to feed the wide
-  pill; the smaller waves bucket down as before.
+- The spectrum analyzer resolves 24 bands (was 6), enough to feed the wide
+  pill at its maximum bar count; the smaller waves bucket down as before. Its
+  time constants tick on audio time instead of the wall clock — deterministic
+  under callback jitter, and testable faster than real time.
+- Silence costs almost nothing now. The analyzer used to run a 1024-point FFT
+  ~46 times a second against digital zeroes and push 30 UI updates a second
+  for an unchanged flat wave — the "high energy use" Battery settings kept
+  flagging. A peak gate puts the analysis to sleep after two silent seconds
+  (the first audible sample wakes it), and the publisher only touches the
+  main thread when a level actually moves.
 - New original waveform app icon (the earlier one leaned on the Obsidian logo).
 
 ### Fixed

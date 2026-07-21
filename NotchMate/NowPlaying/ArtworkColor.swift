@@ -53,8 +53,8 @@ struct CoverBarPalette: Equatable {
     }
 
     /// Bar counts the table is built for — everything the pill's bar-count
-    /// slider can ask for (6…16), the small waves (3…5) and the music tab (6).
-    static let supportedBarCounts = Array(3...16)
+    /// slider can ask for (6…24), the small waves (3…5) and the music tab (6).
+    static let supportedBarCounts = Array(3...24)
 
     let bars: [Int: [Bar]]
 

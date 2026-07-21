@@ -16,10 +16,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// driven centrally in `NotchRootView` off screen state alone — it runs
     /// whenever the screen is awake, and `spectrum.hasSignal` (derived from the
     /// tapped audio itself) reports whether anything is actually audible.
-    /// 16 bands so the widest renderer (the spectrum-only pill) gets real
-    /// resolution; the narrower waves bucket down via `WaveBarsView.fitted()`.
-    /// Band mapping cost is O(FFT bins) regardless of band count.
-    let spectrum = SpectrumAnalyzer(bandCount: 16)
+    /// 24 bands so the widest renderer (the spectrum-only pill at its maximum
+    /// bar count) keeps one band per bar; the narrower waves bucket down via
+    /// `WaveBarsView.fitted()`. Band mapping cost is O(FFT bins) regardless
+    /// of band count.
+    let spectrum = SpectrumAnalyzer(bandCount: 24)
     lazy var capture = ObsidianCapture(activities: activities)
     lazy var pomodoro = PomodoroManager(activities: activities)
     /// Claude tab: usage windows (fetched on demand, no background polling)

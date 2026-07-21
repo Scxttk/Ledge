@@ -47,10 +47,10 @@ enum NotchLayout {
     /// Spectrum-only pill (`UserSettings.pillSpectrumOnly`): the wave replaces
     /// the artwork thumbnail entirely and the whole pill grows into a stage
     /// for it — this mode exists to *watch*, so it deliberately takes more
-    /// room than the cover+wave layout it replaces. 16 bars map 1:1 onto the
-    /// analyzer's 16 bands (no bucketing, full resolution); 16 × 2.0 + 15 × 1.0
-    /// = 47, the width rounds up for a hair of buffer. The taller pill
-    /// (`collapsedTallHeight`) gives the bars real travel.
+    /// room than the cover+wave layout it replaces. Bar count and wave width
+    /// are user-tunable (`pillSpectrumBarCount`/`pillSpectrumWidth`); these
+    /// constants are the defaults and what the snapshot tests render. The
+    /// taller pill (`collapsedTallHeight`) gives the bars real travel.
     static let collapsedWideWaveBarCount: Int = 16
     static let collapsedWideWaveMaxHeight: CGFloat = 18
     static let collapsedWideWavesWidth: CGFloat = 48

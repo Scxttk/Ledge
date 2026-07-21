@@ -90,7 +90,7 @@ private struct NowPlayingSettings: View {
 
             Section {
                 Toggle(String(localized: "settings.spectrum.pillOnly", defaultValue: "Nur Spektrum statt Cover"), isOn: $settings.pillSpectrumOnly)
-                Stepper(value: $settings.pillSpectrumBarCount, in: 6...16) {
+                Stepper(value: $settings.pillSpectrumBarCount, in: 6...24) {
                     LabeledContent(
                         String(localized: "settings.spectrum.pillBars", defaultValue: "Balken"),
                         value: "\(settings.pillSpectrumBarCount)"
@@ -98,7 +98,7 @@ private struct NowPlayingSettings: View {
                 }
                 .disabled(!settings.pillSpectrumOnly)
                 LabeledContent(String(localized: "settings.spectrum.pillWidth", defaultValue: "Breite")) {
-                    Slider(value: $settings.pillSpectrumWidth, in: 36...90, step: 2)
+                    Slider(value: $settings.pillSpectrumWidth, in: 36...140, step: 2)
                 }
                 .disabled(!settings.pillSpectrumOnly)
                 Picker(String(localized: "settings.spectrum.style", defaultValue: "Spektrum-Stil"), selection: $settings.spectrumStyle) {
