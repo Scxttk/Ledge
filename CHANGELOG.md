@@ -36,6 +36,12 @@ that had been hiding since the spectrum tap learned to hear non-music audio.
   style is a full-saturation brightness ramp now), gradients run through up to
   three colors the cover actually contains, and every bar throws a glow that
   pulses with its band.
+- The bars dance to compressed masters now, not only to dynamic audio. Each
+  band tracks its own running average and the level leans on the deviation
+  from it — a kick punches to the top even on a loudness-normalized Spotify
+  master that barely moves in absolute dB.
+- New tab glyphs: the music tab wears the app's waveform instead of a generic
+  note, and the Claude tab got Claude Code's crab.
 - The spectrum analyzer resolves 16 bands (was 6), enough to feed the wide
   pill; the smaller waves bucket down as before.
 - New original waveform app icon (the earlier one leaned on the Obsidian logo).
