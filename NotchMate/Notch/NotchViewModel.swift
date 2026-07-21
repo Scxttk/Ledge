@@ -123,7 +123,13 @@ final class NotchViewModel: ObservableObject {
     func collapsedWidth(isPlaying: Bool, hasItems: Bool, timerText: String?) -> CGFloat {
         var core: CGFloat
         if isPlaying {
-            core = NotchLayout.collapsedArtworkWidth + NotchLayout.collapsedItemSpacing + NotchLayout.collapsedWavesWidth
+            // Spectrum-only mode drops the artwork thumbnail and lets the wave
+            // span the freed space; by construction the two variants are the
+            // same width, but both read their own constant so neither silently
+            // drifts if one is retuned.
+            core = UserSettings.shared.pillSpectrumOnly
+                ? NotchLayout.collapsedWideWavesWidth
+                : NotchLayout.collapsedArtworkWidth + NotchLayout.collapsedItemSpacing + NotchLayout.collapsedWavesWidth
             if let timerText {
                 core += NotchLayout.collapsedItemSpacing + Self.timerSegmentWidth(timerText)
             }

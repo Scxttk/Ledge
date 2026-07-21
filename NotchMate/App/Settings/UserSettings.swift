@@ -140,6 +140,7 @@ final class UserSettings: ObservableObject {
         static let spectrumColorSource = "spectrumColorSource"
         static let spectrumColorA = "spectrumColorA"
         static let spectrumColorB = "spectrumColorB"
+        static let pillSpectrumOnly = "pillSpectrumOnly"
         // Obsidian Quick Capture
         static let vaultBookmark = "obsidianVaultBookmark"
         static let vaultName = "obsidianVaultName"
@@ -208,6 +209,12 @@ final class UserSettings: ObservableObject {
     }
     @Published var coverBarBrightness: Double {
         didSet { defaults.set(coverBarBrightness, forKey: Key.coverBarBrightness) }
+    }
+    /// Replace the collapsed pill's mini cover with a wider spectrum (more,
+    /// longer bars) spanning the space the cover freed up. Pill only — the
+    /// expanded music tab keeps its cover.
+    @Published var pillSpectrumOnly: Bool {
+        didSet { defaults.set(pillSpectrumOnly, forKey: Key.pillSpectrumOnly) }
     }
     @Published var spectrumColorSource: SpectrumColorSource {
         didSet { defaults.set(spectrumColorSource.rawValue, forKey: Key.spectrumColorSource) }
@@ -347,6 +354,7 @@ final class UserSettings: ObservableObject {
             Key.coverBrightnessLevels: 3,
             Key.coverBarSaturation: 1.0,
             Key.coverBarBrightness: 1.0,
+            Key.pillSpectrumOnly: false,
         ])
         self.mediaSource = MediaSource(rawValue: defaults.string(forKey: Key.mediaSource) ?? "") ?? .auto
         self.appearance = Appearance(rawValue: defaults.string(forKey: Key.appearance) ?? "") ?? .system
@@ -359,6 +367,7 @@ final class UserSettings: ObservableObject {
         self.coverBrightnessLevels = defaults.integer(forKey: Key.coverBrightnessLevels)
         self.coverBarSaturation = defaults.double(forKey: Key.coverBarSaturation)
         self.coverBarBrightness = defaults.double(forKey: Key.coverBarBrightness)
+        self.pillSpectrumOnly = defaults.bool(forKey: Key.pillSpectrumOnly)
         self.spectrumColorA = Self.decodeColor(defaults.data(forKey: Key.spectrumColorA)) ?? .cyan
         self.spectrumColorB = Self.decodeColor(defaults.data(forKey: Key.spectrumColorB)) ?? .purple
         self.vaultBookmark = defaults.data(forKey: Key.vaultBookmark)

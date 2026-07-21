@@ -89,6 +89,7 @@ private struct NowPlayingSettings: View {
                 .foregroundStyle(.secondary)
 
             Section {
+                Toggle(String(localized: "settings.spectrum.pillOnly", defaultValue: "Nur Spektrum statt Cover"), isOn: $settings.pillSpectrumOnly)
                 Picker(String(localized: "settings.spectrum.style", defaultValue: "Spektrum-Stil"), selection: $settings.spectrumStyle) {
                     ForEach(UserSettings.SpectrumStyle.allCases) { style in
                         Text(style.localizedName).tag(style)
@@ -107,7 +108,7 @@ private struct NowPlayingSettings: View {
             } header: {
                 Text(String(localized: "settings.spectrum.header", defaultValue: "Sound-Spektrum"))
             } footer: {
-                Text(String(localized: "settings.spectrum.hint", defaultValue: "„Vom Cover“ leitet die zweite Farbe automatisch aus dem Album-Akzent ab."))
+                Text(String(localized: "settings.spectrum.hint", defaultValue: "„Nur Spektrum“ ersetzt das Mini-Cover in der eingeklappten Notch durch ein breiteres Spektrum mit mehr Balken — der Musik-Tab behält sein Cover. „Vom Cover“ leitet die zweite Farbe automatisch aus dem Album-Akzent ab."))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

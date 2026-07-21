@@ -11,6 +11,9 @@ struct NotchRootView: View {
     @ObservedObject var spectrum: SpectrumAnalyzer
     @ObservedObject var claudeUsage: ClaudeUsageModel
     @ObservedObject var claudeDriver: ClaudeSessionDriver
+    /// Observed so `islandWidth` re-evaluates when the spectrum-only pill mode
+    /// flips — the pill's width formula changes with it.
+    @ObservedObject private var settings = UserSettings.shared
 
     /// Run the audio tap whenever the screen is on, regardless of whether
     /// anything is playing — `spectrum.hasSignal` (derived from the tapped
@@ -114,6 +117,9 @@ struct NotchRootView: View {
                 )
             )
             .frame(width: islandWidth, height: islandHeight)
+            // Settings toggles change the pill's width formula outside the
+            // staged walk's withAnimation calls; morph instead of snapping.
+            .animation(NotchLayout.islandMorphAnimation, value: settings.pillSpectrumOnly)
             .shadow(
                 color: .black.opacity(viewModel.isExpanded ? NotchLayout.islandShadowOpacityExpanded : NotchLayout.islandShadowOpacityCollapsed),
                 radius: NotchLayout.islandShadowRadius,
@@ -439,6 +445,7 @@ private struct CollapsedView: View {
     @ObservedObject var shelf: FileShelfModel
     @ObservedObject var pomodoro: PomodoroManager
     @ObservedObject var spectrum: SpectrumAnalyzer
+    @ObservedObject private var settings = UserSettings.shared
     /// Whether the pill hero (cover-or-generic-icon + wave) should show at all —
     /// true for Spotify/Music, but also for any other system audio (browser
     /// video, calls, …) that has no scriptable track to show a cover for.
@@ -506,7 +513,24 @@ private struct CollapsedView: View {
         // silhouette — so both sides read from the same `NotchLayout` constants.
         HStack(spacing: NotchLayout.collapsedItemSpacing) {
             if hasAudioHero {
-                if showsTrackArtwork, let url = nowPlaying.track?.artworkURL {
+                if settings.pillSpectrumOnly {
+                    // Spectrum-only mode: no thumbnail at all (neither cover
+                    // nor source-app icon — "only the spectrum" holds for both
+                    // kinds of audio), just a wider, taller wave across the
+                    // space the thumbnail freed up.
+                    WaveBarsView(
+                        isActive: nowPlaying.screensAwake,
+                        tint: waveTint,
+                        coverBars: showsTrackArtwork ? nowPlaying.coverBars : nil,
+                        bands: spectrum.isLive ? spectrum.bands : nil,
+                        count: NotchLayout.collapsedWideWaveBarCount,
+                        maxHeight: NotchLayout.collapsedWideWaveMaxHeight,
+                        barWidth: NotchLayout.collapsedWaveBarWidth,
+                        spacing: NotchLayout.collapsedWaveSpacing
+                    )
+                    .frame(width: NotchLayout.collapsedWideWavesWidth, height: NotchLayout.collapsedWideWaveFrameHeight)
+                    .transition(.opacity.combined(with: .scale(scale: 0.85)))
+                } else if showsTrackArtwork, let url = nowPlaying.track?.artworkURL {
                     // Fade the new cover in (transaction animation) over a placeholder
                     // tinted to the track's accent colour rather than flat grey, so a
                     // track change doesn't flash a grey square then pop during the
@@ -520,6 +544,7 @@ private struct CollapsedView: View {
                     }
                     .frame(width: NotchLayout.collapsedArtworkWidth, height: NotchLayout.collapsedArtworkWidth)
                     .clipShape(RoundedRectangle(cornerRadius: NotchLayout.collapsedArtworkCornerRadius))
+                    .transition(.opacity.combined(with: .scale(scale: 0.6)))
                 } else {
                     // System audio with no scriptable track (browser video, a
                     // call, …) — show the source app's own icon full-bleed when
@@ -540,20 +565,22 @@ private struct CollapsedView: View {
                         }
                     }
                     .frame(width: NotchLayout.collapsedArtworkWidth, height: NotchLayout.collapsedArtworkWidth)
-                    .onAppear { refreshSourceAppIcon(for: spectrum.sourceBundleID) }
-                    .onChange(of: spectrum.sourceBundleID) { _, bundleID in refreshSourceAppIcon(for: bundleID) }
+                    .transition(.opacity.combined(with: .scale(scale: 0.6)))
                 }
-                WaveBarsView(
-                    isActive: nowPlaying.screensAwake,
-                    tint: waveTint,
-                    coverBars: showsTrackArtwork ? nowPlaying.coverBars : nil,
-                    bands: spectrum.isLive ? spectrum.bands : nil,
-                    count: NotchLayout.collapsedWaveBarCount,
-                    maxHeight: NotchLayout.collapsedWaveMaxHeight,
-                    barWidth: NotchLayout.collapsedWaveBarWidth,
-                    spacing: NotchLayout.collapsedWaveSpacing
-                )
-                .frame(width: NotchLayout.collapsedWavesWidth, height: NotchLayout.collapsedArtworkWidth)
+                if !settings.pillSpectrumOnly {
+                    WaveBarsView(
+                        isActive: nowPlaying.screensAwake,
+                        tint: waveTint,
+                        coverBars: showsTrackArtwork ? nowPlaying.coverBars : nil,
+                        bands: spectrum.isLive ? spectrum.bands : nil,
+                        count: NotchLayout.collapsedWaveBarCount,
+                        maxHeight: NotchLayout.collapsedWaveMaxHeight,
+                        barWidth: NotchLayout.collapsedWaveBarWidth,
+                        spacing: NotchLayout.collapsedWaveSpacing
+                    )
+                    .frame(width: NotchLayout.collapsedWavesWidth, height: NotchLayout.collapsedArtworkWidth)
+                    .transition(.opacity)
+                }
             } else if pomodoro.pillText == nil {
                 Image(systemName: idleIcon)
                     .font(.system(size: NotchLayout.bandFontSize, weight: .medium))
@@ -578,6 +605,15 @@ private struct CollapsedView: View {
         // so the glyph starts mid-island and drifts up — the diagonal flight.
         .frame(height: NotchLayout.collapsedHeight)
         .frame(maxHeight: .infinity, alignment: .top)
+        // The spectrum-only toggle swaps the hero's layout in place; a scoped
+        // value animation can't interfere with the staged expand/collapse
+        // walk's explicit withAnimation calls.
+        .animation(NotchLayout.islandMorphAnimation, value: settings.pillSpectrumOnly)
+        // Resolved at the pill level (not inside the thumbnail branch) so the
+        // source-app tint keeps refreshing in spectrum-only mode, where no
+        // icon is on screen but the wave still wants the app's accent.
+        .onAppear { refreshSourceAppIcon(for: spectrum.sourceBundleID) }
+        .onChange(of: spectrum.sourceBundleID) { _, bundleID in refreshSourceAppIcon(for: bundleID) }
     }
 
     /// The passive focus-timer readout. Sizes must stay in lock-step with the

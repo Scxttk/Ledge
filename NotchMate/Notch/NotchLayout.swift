@@ -44,6 +44,16 @@ enum NotchLayout {
     static let collapsedWaveMaxHeight: CGFloat = 12
     static let collapsedWaveBarWidth: CGFloat = 2.0
     static let collapsedWaveSpacing: CGFloat = 1.0
+    /// Spectrum-only pill (`UserSettings.pillSpectrumOnly`): the wave replaces
+    /// the artwork thumbnail entirely and spans the space it freed up —
+    /// artwork (14) + item spacing (6) + waves (16) = 36, so the pill's
+    /// silhouette barely moves when the mode toggles. 12 × 2.0 + 11 × 1.0 = 35,
+    /// the width rounds up for a hair of buffer. Bars grow taller too (the
+    /// thumbnail's 5pt of top clearance no longer applies to a pure wave).
+    static let collapsedWideWaveBarCount: Int = 12
+    static let collapsedWideWaveMaxHeight: CGFloat = 14
+    static let collapsedWideWavesWidth: CGFloat = 36
+    static let collapsedWideWaveFrameHeight: CGFloat = 16
     /// Font size of the shelf badge's item count in the collapsed pill.
     static let collapsedBadgeFontSize: CGFloat = 9
     /// The shelf badge (tray icon + item count, up to ~2 digits).
