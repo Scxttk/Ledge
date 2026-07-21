@@ -16,11 +16,15 @@ final class WaveMotionContactSheetTests: XCTestCase {
     private let sampleRate = 48_000.0
     private let blockSize = 1024
 
-    /// One audio block of the synthetic track. A 95 Hz bass line that pumps
-    /// with the beat, a kick thump in the first ~80 ms of every half-second,
-    /// and a little broadband noise as hi-hats.
+    /// One audio block of the synthetic track: a full mix, not a lone tone —
+    /// a single sine fills exactly one of 16 bands and makes the sheet look
+    /// dead between kicks for reasons that have nothing to do with the
+    /// mapping. Bass line pumping with the beat (kick in the first ~80 ms of
+    /// every half-second), a three-note mid chord swelling against the beat,
+    /// and noise hi-hats accenting the off-beat.
     private func musicBlock(blockIndex: Int, phase: inout Double) -> [Float] {
-        let step = 2.0 * Double.pi * 95.0 / sampleRate
+        let bassStep = 2.0 * Double.pi * 95.0 / sampleRate
+        let midFreqs = [440.0, 660.0, 1320.0, 2640.0]
         let blockTime = Double(blockIndex) * Double(blockSize) / sampleRate
         var rng = SystemRandomNumberGenerator()
         return (0..<blockSize).map { i in
@@ -28,9 +32,18 @@ final class WaveMotionContactSheetTests: XCTestCase {
             let beatPhase = t.truncatingRemainder(dividingBy: 0.5)
             let kick: Float = beatPhase < 0.08 ? Float(1.0 - beatPhase / 0.08) : 0
             let bass = Float(sin(phase)) * (0.06 + 0.14 * kick)
-            phase += step
-            let hat = Float.random(in: -1...1, using: &rng) * 0.008
-            return bass + hat
+            phase += bassStep
+            // Mids swell opposite the kick so some part of the wave is always
+            // in motion — the way pads and vocals sit between drum hits.
+            let swell = Float(0.5 + 0.5 * sin(2 * .pi * t))
+            let mids = midFreqs.reduce(Float(0)) { sum, f in
+                sum + Float(sin(2 * .pi * f * t)) * 0.012 * (0.4 + 0.6 * swell)
+            }
+            // Hats on the off-beat.
+            let offBeat = (t + 0.25).truncatingRemainder(dividingBy: 0.5)
+            let hatEnv: Float = offBeat < 0.05 ? Float(1.0 - offBeat / 0.05) : 0.15
+            let hat = Float.random(in: -1...1, using: &rng) * 0.012 * hatEnv
+            return bass + mids + hat
         }
     }
 
