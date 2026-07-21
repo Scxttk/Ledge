@@ -34,7 +34,7 @@ Some of this is opinionated because I built it for myself first: the UI is in Ge
 Beyond that:
 
 - Now-playing for Spotify and Apple Music, driven by AppleScript rather than MediaRemote — Apple sealed that framework off in macOS 15.4, which broke pretty much every third-party notch app overnight. AppleScript means polling every 5 seconds with local interpolation in between, not instant, but it survives OS updates that private APIs don't.
-- A live audio spectrum in the pill and the music tab, fed by a CoreAudio system tap — real frequencies, not a canned animation. Five color styles, including one that quantises each bar onto the album cover's own palette, and a setting that drops the mini cover entirely for a wider twelve-bar wave.
+- A live audio spectrum in the pill and the music tab, fed by a CoreAudio system tap — real frequencies, not a canned animation. Five color styles, including one that quantises each bar onto the album cover's own palette, and a setting that drops the mini cover entirely for a sixteen-bar wave in a bigger pill — one bar per analyzer band.
 - A file shelf. Drag files onto the notch, drag them off later, wherever "later" ends up being. Tracked by bookmark, not path, so a rename or a reboot doesn't lose them.
 - Obsidian quick capture: ⌥⌘Space, type, and it's appended under a heading in today's daily note without Obsidian needing to be open. Point it at your vault in Settings first.
 - A pomodoro timer with named presets and auto-chaining, because I kept starting one in a phone app and then closing the phone app.

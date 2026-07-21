@@ -83,7 +83,7 @@ struct NotchRootView: View {
     }
 
     private var island: some View {
-        let cornerRadius = viewModel.isExpanded ? NotchLayout.expandedCornerRadius : NotchLayout.collapsedCornerRadius
+        let cornerRadius = viewModel.isExpanded ? NotchLayout.expandedCornerRadius : viewModel.collapsedHeight / 2
         let shape = IslandShape(cornerRadius: cornerRadius)
         // The dark silhouette leads; content is clipped to the same rounded rect
         // so it can't float outside the shape while it resizes. The highlight rim
@@ -247,7 +247,7 @@ private struct ActivityCompactView: View {
         .padding(.horizontal, isRoute ? 12 : 14)
         // Same fixed top band as CollapsedView, so activity content doesn't
         // drift vertically while the island morphs.
-        .frame(height: NotchLayout.collapsedHeight)
+        .frame(height: NotchLayout.currentCollapsedHeight)
         .frame(maxHeight: .infinity, alignment: .top)
     }
 }
@@ -328,7 +328,7 @@ private struct ExpandedView: View {
                     || viewModel.islandState == .solo
             )
             .frame(maxWidth: .infinity)
-            .frame(height: NotchLayout.collapsedHeight)
+            .frame(height: NotchLayout.currentCollapsedHeight)
 
             // All three pages live in a carousel that slides as one strip. Unlike
             // insertion/removal transitions this can't get the direction wrong on
@@ -605,7 +605,7 @@ private struct CollapsedView: View {
         // Pin the pill row to a fixed top band. Without this the row is
         // vertically centered in the *animated* island frame during the morph,
         // so the glyph starts mid-island and drifts up — the diagonal flight.
-        .frame(height: NotchLayout.collapsedHeight)
+        .frame(height: viewModel.collapsedHeight)
         .frame(maxHeight: .infinity, alignment: .top)
         // The spectrum-only toggle swaps the hero's layout in place; a scoped
         // value animation can't interfere with the staged expand/collapse

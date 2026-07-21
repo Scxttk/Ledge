@@ -110,7 +110,11 @@ final class NotchViewModel: ObservableObject {
     }
 
     // Visible island dimensions (sourced from NotchLayout).
-    var collapsedHeight: CGFloat { NotchLayout.collapsedHeight }
+    /// Taller while the spectrum-only pill is on — that mode is for watching,
+    /// and the extra height is the bars' travel. Single source for the
+    /// silhouette, the hit/hover rects and the content rows' pinning, so the
+    /// pill can't end up taller than the area that reacts to it.
+    var collapsedHeight: CGFloat { NotchLayout.currentCollapsedHeight }
     var expandedWidth: CGFloat { NotchLayout.expandedWidth }
     var expandedHeight: CGFloat { NotchLayout.expandedHeight }
 

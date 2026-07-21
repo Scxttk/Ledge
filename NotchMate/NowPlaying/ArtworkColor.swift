@@ -45,9 +45,9 @@ struct CoverBarPalette: Equatable {
         let bottom: Color
     }
 
-    /// Bar counts the table is built for — the pill's (5, or 12 in
+    /// Bar counts the table is built for — the pill's (5, or 16 in
     /// spectrum-only mode) and the music tab's (6).
-    static let supportedBarCounts = [3, 4, 5, 6, 7, 8, 12]
+    static let supportedBarCounts = [3, 4, 5, 6, 7, 8, 16]
 
     let bars: [Int: [Bar]]
 

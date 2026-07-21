@@ -45,15 +45,27 @@ enum NotchLayout {
     static let collapsedWaveBarWidth: CGFloat = 2.0
     static let collapsedWaveSpacing: CGFloat = 1.0
     /// Spectrum-only pill (`UserSettings.pillSpectrumOnly`): the wave replaces
-    /// the artwork thumbnail entirely and spans the space it freed up —
-    /// artwork (14) + item spacing (6) + waves (16) = 36, so the pill's
-    /// silhouette barely moves when the mode toggles. 12 × 2.0 + 11 × 1.0 = 35,
-    /// the width rounds up for a hair of buffer. Bars grow taller too (the
-    /// thumbnail's 5pt of top clearance no longer applies to a pure wave).
-    static let collapsedWideWaveBarCount: Int = 12
-    static let collapsedWideWaveMaxHeight: CGFloat = 14
-    static let collapsedWideWavesWidth: CGFloat = 36
-    static let collapsedWideWaveFrameHeight: CGFloat = 16
+    /// the artwork thumbnail entirely and the whole pill grows into a stage
+    /// for it — this mode exists to *watch*, so it deliberately takes more
+    /// room than the cover+wave layout it replaces. 16 bars map 1:1 onto the
+    /// analyzer's 16 bands (no bucketing, full resolution); 16 × 2.0 + 15 × 1.0
+    /// = 47, the width rounds up for a hair of buffer. The taller pill
+    /// (`collapsedTallHeight`) gives the bars real travel.
+    static let collapsedWideWaveBarCount: Int = 16
+    static let collapsedWideWaveMaxHeight: CGFloat = 18
+    static let collapsedWideWavesWidth: CGFloat = 48
+    static let collapsedWideWaveFrameHeight: CGFloat = 20
+    /// Pill height while the spectrum-only mode is on (all island stages read
+    /// it through `NotchViewModel.collapsedHeight`, so silhouette, hit rect
+    /// and content rows stay in lock-step). 30 + `islandTopGap` (2) = 32 —
+    /// still inside the physical notch's band on notched MacBooks.
+    static let collapsedTallHeight: CGFloat = 30
+    /// The collapsed height currently in effect (see `collapsedTallHeight`).
+    /// Views without a `NotchViewModel` read this; the view model's
+    /// `collapsedHeight` returns the same value, so there is one formula.
+    static var currentCollapsedHeight: CGFloat {
+        UserSettings.shared.pillSpectrumOnly ? collapsedTallHeight : collapsedHeight
+    }
     /// Font size of the shelf badge's item count in the collapsed pill.
     static let collapsedBadgeFontSize: CGFloat = 9
     /// The shelf badge (tray icon + item count, up to ~2 digits).

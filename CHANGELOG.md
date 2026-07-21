@@ -10,8 +10,9 @@ that had been hiding since the spectrum tap learned to hear non-music audio.
 
 ### Added
 - **Spectrum-only pill.** A new toggle in the now-playing settings replaces the
-  mini cover in the collapsed pill with twelve taller bars across the same
-  width. The music tab keeps its cover.
+  mini cover in the collapsed pill with sixteen bars — one per analyzer band —
+  in a wider, slightly taller pill. This mode exists to be watched, so it
+  takes the room it needs. The music tab keeps its cover.
 - **Claude tab**: usage limits at a glance plus a gearbox-style shifter for
   model/effort/mode of the Claude desktop app.
 - **Per-tab visibility toggles** — hide the tabs you never open.
