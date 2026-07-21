@@ -28,6 +28,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let claudeDriver = ClaudeSessionDriver()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // As the unit tests' host app, do nothing: the real startup builds the
+        // notch panel, taps system audio and grabs hardware keys — on a CI
+        // runner the audio tap's consent prompt has nobody to click it, and
+        // the test runner then "never began executing tests".
+        if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil { return }
+
         // Accessory app: no Dock icon, lives in the menu bar / notch.
         NSApp.setActivationPolicy(.accessory)
         applyAppearance(UserSettings.shared.appearance)
