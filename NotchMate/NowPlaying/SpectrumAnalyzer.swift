@@ -59,7 +59,11 @@ final class SpectrumAnalyzer: ObservableObject {
     )
 
     // FFT scratch (all preallocated — nothing is allocated on the audio thread).
-    private let fftSize = 1_024
+    /// 2048 (was 1024): at 32 bands the low end needs the finer bins — with
+    /// 46.9 Hz bins the bottom half-dozen log bands all landed on the same
+    /// two bins and moved as twins. 23.4 Hz bins keep them distinct; the FFT
+    /// itself stays cheap on any Apple-Silicon Mac.
+    private let fftSize = 2_048
     private let log2n: vDSP_Length
     private var fftSetup: FFTSetup?
     private var window: [Float]

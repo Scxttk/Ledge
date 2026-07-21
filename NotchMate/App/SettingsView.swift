@@ -90,7 +90,7 @@ private struct NowPlayingSettings: View {
 
             Section {
                 Toggle(String(localized: "settings.spectrum.pillOnly", defaultValue: "Nur Spektrum statt Cover"), isOn: $settings.pillSpectrumOnly)
-                Stepper(value: $settings.pillSpectrumBarCount, in: 6...24) {
+                Stepper(value: $settings.pillSpectrumBarCount, in: 6...32) {
                     LabeledContent(
                         String(localized: "settings.spectrum.pillBars", defaultValue: "Balken"),
                         value: "\(settings.pillSpectrumBarCount)"

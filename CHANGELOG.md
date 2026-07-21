@@ -12,7 +12,7 @@ that had been hiding since the spectrum tap learned to hear non-music audio.
 - **Spectrum-only pill.** A new toggle in the now-playing settings replaces the
   mini cover in the collapsed pill with a wider, slightly taller wave. This
   mode exists to be watched, so it takes the room it needs — and it comes with
-  two controls: bar count (6–24, at 24 every bar is its own analyzer band) and
+  two controls: bar count (6–32, at 32 every bar is its own analyzer band) and
   pill width (36–140pt); the bars spread evenly, so fewer bars means wider
   gaps. The music tab keeps its cover.
 - **Claude tab**: usage limits at a glance plus a gearbox-style shifter for
@@ -50,7 +50,8 @@ that had been hiding since the spectrum tap learned to hear non-music audio.
   master that barely moves in absolute dB.
 - New tab glyphs: the music tab wears the app's waveform instead of a generic
   note, and the Claude tab got Claude Code's crab.
-- The spectrum analyzer resolves 24 bands (was 6), enough to feed the wide
+- The spectrum analyzer resolves 32 bands (was 6) over a 2048-point FFT (was
+  1024 — the finer bins keep the low bands distinct), enough to feed the wide
   pill at its maximum bar count; the smaller waves bucket down as before. Its
   time constants tick on audio time instead of the wall clock — deterministic
   under callback jitter, and testable faster than real time.

@@ -218,7 +218,7 @@ final class UserSettings: ObservableObject {
     @Published var pillSpectrumOnly: Bool {
         didSet { defaults.set(pillSpectrumOnly, forKey: Key.pillSpectrumOnly) }
     }
-    /// How many bars the spectrum-only pill draws (6…24 — 24 is the
+    /// How many bars the spectrum-only pill draws (6…32 — 32 is the
     /// analyzer's full band resolution) and how wide the pill's wave area is.
     /// The bars spread evenly across that width: fewer bars → wider gaps.
     @Published var pillSpectrumBarCount: Int {
@@ -381,7 +381,7 @@ final class UserSettings: ObservableObject {
         self.coverBarSaturation = defaults.double(forKey: Key.coverBarSaturation)
         self.coverBarBrightness = defaults.double(forKey: Key.coverBarBrightness)
         self.pillSpectrumOnly = defaults.bool(forKey: Key.pillSpectrumOnly)
-        self.pillSpectrumBarCount = max(6, min(24, defaults.integer(forKey: Key.pillSpectrumBarCount)))
+        self.pillSpectrumBarCount = max(6, min(32, defaults.integer(forKey: Key.pillSpectrumBarCount)))
         self.pillSpectrumWidth = max(36, min(140, defaults.double(forKey: Key.pillSpectrumWidth)))
         self.spectrumColorA = Self.decodeColor(defaults.data(forKey: Key.spectrumColorA)) ?? .cyan
         self.spectrumColorB = Self.decodeColor(defaults.data(forKey: Key.spectrumColorB)) ?? .purple
