@@ -139,7 +139,7 @@ final class NotchViewModel: ObservableObject {
             // same width, but both read their own constant so neither silently
             // drifts if one is retuned.
             core = UserSettings.shared.pillSpectrumOnly
-                ? NotchLayout.collapsedWideWavesWidth
+                ? CGFloat(UserSettings.shared.pillSpectrumWidth)
                 : NotchLayout.collapsedArtworkWidth + NotchLayout.collapsedItemSpacing + NotchLayout.collapsedWavesWidth
             if let timerText {
                 core += NotchLayout.collapsedItemSpacing + Self.timerSegmentWidth(timerText)

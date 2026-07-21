@@ -117,9 +117,11 @@ struct NotchRootView: View {
                 )
             )
             .frame(width: islandWidth, height: islandHeight)
-            // Settings toggles change the pill's width formula outside the
+            // Settings changes alter the pill's width formula outside the
             // staged walk's withAnimation calls; morph instead of snapping.
             .animation(NotchLayout.islandMorphAnimation, value: settings.pillSpectrumOnly)
+            .animation(NotchLayout.islandMorphAnimation, value: settings.pillSpectrumWidth)
+            .animation(NotchLayout.islandMorphAnimation, value: settings.pillSpectrumBarCount)
             .shadow(
                 color: .black.opacity(viewModel.isExpanded ? NotchLayout.islandShadowOpacityExpanded : NotchLayout.islandShadowOpacityCollapsed),
                 radius: NotchLayout.islandShadowRadius,
@@ -531,7 +533,14 @@ private struct CollapsedView: View {
                     // Spectrum-only mode: no thumbnail at all (neither cover
                     // nor source-app icon — "only the spectrum" holds for both
                     // kinds of audio), just a wider, taller wave across the
-                    // space the thumbnail freed up.
+                    // space the thumbnail freed up. Bar count and wave width
+                    // are user-tunable; the bars spread evenly across the
+                    // width, so fewer bars simply means wider gaps.
+                    let barCount = settings.pillSpectrumBarCount
+                    let waveWidth = CGFloat(settings.pillSpectrumWidth)
+                    let spacing = barCount > 1
+                        ? (waveWidth - CGFloat(barCount) * NotchLayout.collapsedWaveBarWidth) / CGFloat(barCount - 1)
+                        : 0
                     WaveBarsView(
                         isActive: nowPlaying.screensAwake,
                         tint: waveTint,
@@ -539,12 +548,12 @@ private struct CollapsedView: View {
                         tertiaryTint: showsTrackArtwork ? nowPlaying.artworkTertiaryColor : nil,
                         coverBars: showsTrackArtwork ? nowPlaying.coverBars : nil,
                         bands: spectrum.isLive ? spectrum.bands : nil,
-                        count: NotchLayout.collapsedWideWaveBarCount,
+                        count: barCount,
                         maxHeight: NotchLayout.collapsedWideWaveMaxHeight,
                         barWidth: NotchLayout.collapsedWaveBarWidth,
-                        spacing: NotchLayout.collapsedWaveSpacing
+                        spacing: max(NotchLayout.collapsedWaveSpacing, spacing)
                     )
-                    .frame(width: NotchLayout.collapsedWideWavesWidth, height: NotchLayout.collapsedWideWaveFrameHeight)
+                    .frame(width: waveWidth, height: NotchLayout.collapsedWideWaveFrameHeight)
                     .transition(.opacity.combined(with: .scale(scale: 0.85)))
                 } else if showsTrackArtwork, let url = nowPlaying.track?.artworkURL {
                     // Fade the new cover in (transaction animation) over a placeholder
@@ -625,10 +634,12 @@ private struct CollapsedView: View {
         // so the glyph starts mid-island and drifts up — the diagonal flight.
         .frame(height: viewModel.collapsedHeight)
         .frame(maxHeight: .infinity, alignment: .top)
-        // The spectrum-only toggle swaps the hero's layout in place; a scoped
-        // value animation can't interfere with the staged expand/collapse
-        // walk's explicit withAnimation calls.
+        // The spectrum-only toggle and its sliders swap the hero's layout in
+        // place; a scoped value animation can't interfere with the staged
+        // expand/collapse walk's explicit withAnimation calls.
         .animation(NotchLayout.islandMorphAnimation, value: settings.pillSpectrumOnly)
+        .animation(NotchLayout.islandMorphAnimation, value: settings.pillSpectrumWidth)
+        .animation(NotchLayout.islandMorphAnimation, value: settings.pillSpectrumBarCount)
         // Resolved at the pill level (not inside the thumbnail branch) so the
         // source-app tint keeps refreshing in spectrum-only mode, where no
         // icon is on screen but the wave still wants the app's accent.

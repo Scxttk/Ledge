@@ -141,6 +141,8 @@ final class UserSettings: ObservableObject {
         static let spectrumColorA = "spectrumColorA"
         static let spectrumColorB = "spectrumColorB"
         static let pillSpectrumOnly = "pillSpectrumOnly"
+        static let pillSpectrumBarCount = "pillSpectrumBarCount"
+        static let pillSpectrumWidth = "pillSpectrumWidth"
         // Obsidian Quick Capture
         static let vaultBookmark = "obsidianVaultBookmark"
         static let vaultName = "obsidianVaultName"
@@ -215,6 +217,15 @@ final class UserSettings: ObservableObject {
     /// expanded music tab keeps its cover.
     @Published var pillSpectrumOnly: Bool {
         didSet { defaults.set(pillSpectrumOnly, forKey: Key.pillSpectrumOnly) }
+    }
+    /// How many bars the spectrum-only pill draws (6…16 — 16 is the
+    /// analyzer's full band resolution) and how wide the pill's wave area is.
+    /// The bars spread evenly across that width: fewer bars → wider gaps.
+    @Published var pillSpectrumBarCount: Int {
+        didSet { defaults.set(pillSpectrumBarCount, forKey: Key.pillSpectrumBarCount) }
+    }
+    @Published var pillSpectrumWidth: Double {
+        didSet { defaults.set(pillSpectrumWidth, forKey: Key.pillSpectrumWidth) }
     }
     @Published var spectrumColorSource: SpectrumColorSource {
         didSet { defaults.set(spectrumColorSource.rawValue, forKey: Key.spectrumColorSource) }
@@ -355,6 +366,8 @@ final class UserSettings: ObservableObject {
             Key.coverBarSaturation: 1.0,
             Key.coverBarBrightness: 1.0,
             Key.pillSpectrumOnly: false,
+            Key.pillSpectrumBarCount: 16,
+            Key.pillSpectrumWidth: 48.0,
         ])
         self.mediaSource = MediaSource(rawValue: defaults.string(forKey: Key.mediaSource) ?? "") ?? .auto
         self.appearance = Appearance(rawValue: defaults.string(forKey: Key.appearance) ?? "") ?? .system
@@ -368,6 +381,8 @@ final class UserSettings: ObservableObject {
         self.coverBarSaturation = defaults.double(forKey: Key.coverBarSaturation)
         self.coverBarBrightness = defaults.double(forKey: Key.coverBarBrightness)
         self.pillSpectrumOnly = defaults.bool(forKey: Key.pillSpectrumOnly)
+        self.pillSpectrumBarCount = max(6, min(16, defaults.integer(forKey: Key.pillSpectrumBarCount)))
+        self.pillSpectrumWidth = max(36, min(90, defaults.double(forKey: Key.pillSpectrumWidth)))
         self.spectrumColorA = Self.decodeColor(defaults.data(forKey: Key.spectrumColorA)) ?? .cyan
         self.spectrumColorB = Self.decodeColor(defaults.data(forKey: Key.spectrumColorB)) ?? .purple
         self.vaultBookmark = defaults.data(forKey: Key.vaultBookmark)
