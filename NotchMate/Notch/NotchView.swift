@@ -521,6 +521,7 @@ private struct CollapsedView: View {
                     WaveBarsView(
                         isActive: nowPlaying.screensAwake,
                         tint: waveTint,
+                        secondaryTint: showsTrackArtwork ? nowPlaying.artworkSecondaryColor : nil,
                         coverBars: showsTrackArtwork ? nowPlaying.coverBars : nil,
                         bands: spectrum.isLive ? spectrum.bands : nil,
                         count: NotchLayout.collapsedWideWaveBarCount,
@@ -571,6 +572,7 @@ private struct CollapsedView: View {
                     WaveBarsView(
                         isActive: nowPlaying.screensAwake,
                         tint: waveTint,
+                        secondaryTint: showsTrackArtwork ? nowPlaying.artworkSecondaryColor : nil,
                         coverBars: showsTrackArtwork ? nowPlaying.coverBars : nil,
                         bands: spectrum.isLive ? spectrum.bands : nil,
                         count: NotchLayout.collapsedWaveBarCount,

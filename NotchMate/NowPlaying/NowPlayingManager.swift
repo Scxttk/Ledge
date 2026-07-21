@@ -20,6 +20,10 @@ final class NowPlayingManager: ObservableObject {
     /// Accent colour derived from the current cover, tinting the wave visualizer.
     /// nil when there's no artwork (e.g. Apple Music) — the wave falls back to blue.
     @Published private(set) var artworkColor: Color?
+    /// The cover's second colour family, when it really has one — feeds the
+    /// gradient/alternating spectrum styles in "Vom Cover" mode. nil when the
+    /// artwork is essentially single-hued (the styles then derive a pair).
+    @Published private(set) var artworkSecondaryColor: Color?
     /// Quantised per-column cover colours for the `.coverImage` spectrum style;
     /// nil when there's no artwork.
     @Published private(set) var coverBars: CoverBarPalette?
@@ -207,13 +211,15 @@ final class NowPlayingManager: ObservableObject {
         artworkColorURL = url
         guard let url else {
             artworkColor = nil
+            artworkSecondaryColor = nil
             coverBars = nil
             return
         }
-        ArtworkColor.fetch(from: url) { [weak self] color in
+        ArtworkColor.fetch(from: url) { [weak self] accents in
             // Ignore a late result for a cover we've already moved on from.
             guard let self, self.artworkColorURL == url else { return }
-            self.artworkColor = color
+            self.artworkColor = accents?.primary
+            self.artworkSecondaryColor = accents?.secondary
         }
         refreshCoverBars()
     }

@@ -88,6 +88,7 @@ struct NowPlayingView: View {
             WaveBarsView(
                 isActive: nowPlaying.isPlaying && nowPlaying.screensAwake,
                 tint: nowPlaying.track != nil ? nowPlaying.artworkColor : nil,
+                secondaryTint: nowPlaying.track != nil ? nowPlaying.artworkSecondaryColor : nil,
                 coverBars: nowPlaying.track != nil ? nowPlaying.coverBars : nil,
                 bands: (nowPlaying.isPlaying && spectrum.isLive) ? spectrum.bands : nil,
                 count: 6
@@ -303,6 +304,10 @@ private struct ControlButton: View {
 struct WaveBarsView: View {
     var isActive: Bool
     var tint: Color?
+    /// The cover's real second colour family (see `ArtworkAccents`), when it
+    /// has one. Used by `.alternating`/`.gradient` in "Vom Cover" mode; nil →
+    /// a pair is derived from `tint` instead.
+    var secondaryTint: Color? = nil
     /// Quantised cover colours (see `ArtworkColor.fetchBarPalette`) for the
     /// `.coverImage` style: one colour per bar, taken from the slice of cover
     /// that bar sits over. nil → the style falls back to `.solid` behaviour.
@@ -330,6 +335,9 @@ struct WaveBarsView: View {
         case .manual:
             return (settings.spectrumColorA, settings.spectrumColorB)
         case .cover:
+            // Prefer the colour the sleeve actually contains; the synthetic
+            // hue-shift pair is only for covers without a real second accent.
+            if let tint, let secondaryTint { return (tint, secondaryTint) }
             return Color.huePair(from: tint ?? .white)
         }
     }
@@ -423,6 +431,7 @@ struct WaveBarsView: View {
             .frame(maxHeight: .infinity, alignment: .center)
             .animation(.easeOut(duration: 0.09), value: values)
             .animation(.easeInOut(duration: 0.4), value: tint)
+            .animation(.easeInOut(duration: 0.4), value: secondaryTint)
             .animation(.easeInOut(duration: 0.4), value: coverBars)
         } else {
             TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !isActive)) { timeline in
@@ -434,6 +443,7 @@ struct WaveBarsView: View {
                 }
                 .frame(maxHeight: .infinity, alignment: .center)
                 .animation(.easeInOut(duration: 0.4), value: tint)
+                .animation(.easeInOut(duration: 0.4), value: secondaryTint)
                 .animation(.easeInOut(duration: 0.4), value: coverBars)
             }
         }

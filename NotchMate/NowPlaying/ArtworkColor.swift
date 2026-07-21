@@ -29,6 +29,16 @@ struct CoverBarTuning: Equatable {
 /// slice depends on how wide the slice is, so five bars are not just six bars
 /// resampled. The collapsed pill and the expanded wave draw different counts,
 /// hence a small table.
+/// The accents a cover actually contains: the dominant hue, plus — when the
+/// artwork really has a second colour family — the strongest hue at least 60°
+/// away from it. The secondary feeds the `gradient`/`alternating` styles in
+/// "Vom Cover" mode, so their second colour comes from the sleeve instead of a
+/// synthetic hue shift.
+struct ArtworkAccents: Equatable {
+    let primary: Color
+    let secondary: Color?
+}
+
 struct CoverBarPalette: Equatable {
     struct Bar: Equatable {
         let top: Color
@@ -74,23 +84,24 @@ struct CoverBarPalette: Equatable {
 /// default colour, since white is the neutral "no real colour here" answer.
 enum ArtworkColor {
     private static let context = CIContext(options: [.workingColorSpace: NSNull()])
-    private static var cache: [URL: Color] = [:]
+    private static var cache: [URL: ArtworkAccents] = [:]
     private static var iconCache: [String: Color] = [:]
     private static var barPaletteCache: [URL: CoverBarPalette] = [:]
     private static var cachedTuning = CoverBarTuning()
 
-    /// Loads `url` off the main thread and calls back on the main thread with a
-    /// tint, or nil if it couldn't be derived. Results are cached per URL.
-    static func fetch(from url: URL, completion: @escaping (Color?) -> Void) {
+    /// Loads `url` off the main thread and calls back on the main thread with
+    /// the cover's accents, or nil if they couldn't be derived. Results are
+    /// cached per URL.
+    static func fetch(from url: URL, completion: @escaping (ArtworkAccents?) -> Void) {
         if let cached = cache[url] {
             completion(cached)
             return
         }
         DispatchQueue.global(qos: .utility).async {
-            let color = data(for: url).flatMap(dominantColor(from:))
+            let result = data(for: url).flatMap(accents(from:))
             DispatchQueue.main.async {
-                if let color { cache[url] = color }
-                completion(color)
+                if let result { cache[url] = result }
+                completion(result)
             }
         }
     }
@@ -106,7 +117,7 @@ enum ArtworkColor {
             return
         }
         DispatchQueue.global(qos: .utility).async {
-            let color = pngData(from: image).flatMap(dominantColor(from:))
+            let color = pngData(from: image).flatMap { accents(from: $0)?.primary }
             DispatchQueue.main.async {
                 if let color { iconCache[cacheKey] = color }
                 completion(color)
@@ -282,13 +293,50 @@ enum ArtworkColor {
         )
     }
 
-    /// The hue that dominates the artwork. Falls back to white if no bucket
-    /// reaches `minimumDominantShare` of the image, and to nil (caller decides
-    /// its own default) only when the image couldn't be read/decoded at all.
-    private static func dominantColor(from data: Data) -> Color? {
+    /// A bucket below `minimumDominantShare` but at or above this still tints
+    /// the accent: a black-and-white cover with a faint colour cast gets a
+    /// desaturated version of that cast (the way the iPhone tints slightly
+    /// coloured monochrome sleeves) instead of snapping to plain white. Only
+    /// genuinely hue-free covers stay white.
+    private static let minimumMutedShare: Double = 0.03
+
+    /// A second accent must cover at least this much of the image and sit at
+    /// least `minimumSecondaryHueDistance` away from the winner's hue —
+    /// otherwise it's the same colour family and no real second accent exists.
+    private static let minimumSecondaryShare: Double = 0.05
+    /// 60° on the hue circle (distances measured as `min(d, 1-d)`, 0…0.5).
+    private static let minimumSecondaryHueDistance: CGFloat = 1.0 / 6.0
+
+    /// The accents that dominate the artwork. `primary` falls back to a muted
+    /// tint (near-monochrome cover) or white (no hue at all); nil only when
+    /// the image couldn't be read/decoded. Internal rather than private so the
+    /// unit tests can feed synthetic covers through the real pipeline.
+    static func accents(from data: Data) -> ArtworkAccents? {
         guard let analysis = hueBuckets(from: data) else { return nil }
-        guard let winner = analysis.buckets.first, winner.share >= minimumDominantShare else { return .white }
-        return vibrant(winner.rgb)
+        guard let winner = analysis.buckets.first else {
+            return ArtworkAccents(primary: .white, secondary: nil)
+        }
+        guard winner.share >= minimumDominantShare else {
+            let primary = winner.share >= minimumMutedShare ? mutedTint(winner.rgb) : .white
+            return ArtworkAccents(primary: primary, secondary: nil)
+        }
+        let winnerHue = hue(of: winner.rgb)
+        let secondary = analysis.buckets.dropFirst().first { bucket in
+            guard bucket.share >= minimumSecondaryShare else { return false }
+            let d = abs(hue(of: bucket.rgb) - winnerHue)
+            return min(d, 1 - d) >= minimumSecondaryHueDistance
+        }
+        return ArtworkAccents(primary: vibrant(winner.rgb), secondary: secondary.map { vibrant($0.rgb) })
+    }
+
+    /// The accent for an essentially monochrome cover with a faint colour
+    /// cast: keep the cast's hue but stay deliberately washed out — boosting
+    /// it to full vibrancy would invent a colour the sleeve doesn't have.
+    private static func mutedTint(_ rgb: (r: CGFloat, g: CGFloat, b: CGFloat)) -> Color {
+        let ns = NSColor(red: rgb.r, green: rgb.g, blue: rgb.b, alpha: 1).usingColorSpace(.deviceRGB)
+        var h: CGFloat = 0, s: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        ns?.getHue(&h, saturation: &s, brightness: &b, alpha: &a)
+        return Color(hue: h, saturation: min(0.35, s * 0.8), brightness: max(0.85, b))
     }
 
     // MARK: Bar palette (`.coverImage` spectrum style)
@@ -544,20 +592,29 @@ enum ArtworkColor {
         let ns = NSColor(red: rgb.r, green: rgb.g, blue: rgb.b, alpha: 1).usingColorSpace(.deviceRGB)
         var h: CGFloat = 0, s: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
         ns?.getHue(&h, saturation: &s, brightness: &b, alpha: &a)
-        let saturation = clamped(min(0.9, max(0.62, s * 1.6)) * tuning.saturation)
-        let brightness = clamped(min(0.96, max(0.84, b * 1.35)) * tuning.brightness)
+        // Tone-mapped like `vibrant()` (see there for why), with a slightly
+        // harder push and higher floors: these bars are two points wide on a
+        // black notch, and legibility needs a bit more than the big accent.
+        let saturation = clamped(min(0.90, max(0.40, s * 1.35)) * tuning.saturation)
+        let brightness = clamped(min(0.96, max(0.72, b * 1.25)) * tuning.brightness)
         return Color(hue: h, saturation: saturation, brightness: brightness)
     }
 
     private static func clamped(_ v: CGFloat) -> CGFloat { min(1, max(0, v)) }
 
-    /// Boost the muddy average into something that reads as the cover's accent.
+    /// Boost the bucket's average into something that reads as the cover's
+    /// accent — tone-mapped, not floored. The old hard floors (saturation
+    /// ≥ 0.65, brightness ≥ 0.8) turned *every* cover neon and erased exactly
+    /// the quality that distinguishes sleeves from one another; the iPhone's
+    /// tints keep a muted cover recognizably muted. A gentle multiplier with a
+    /// wide clamp lifts dull colours into legibility while leaving vivid ones
+    /// nearly untouched.
     private static func vibrant(_ rgb: (r: CGFloat, g: CGFloat, b: CGFloat)) -> Color {
         let ns = NSColor(red: rgb.r, green: rgb.g, blue: rgb.b, alpha: 1).usingColorSpace(.deviceRGB)
         var h: CGFloat = 0, s: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
         ns?.getHue(&h, saturation: &s, brightness: &b, alpha: &a)
-        let saturation = min(1, max(0.65, s * 2.0))
-        let brightness = min(1, max(0.8, b * 1.3))
+        let saturation = min(0.92, max(0.30, s * 1.25))
+        let brightness = min(0.96, max(0.68, b * 1.18))
         return Color(hue: h, saturation: saturation, brightness: brightness)
     }
 }
