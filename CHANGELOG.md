@@ -25,8 +25,12 @@ that had been hiding since the spectrum tap learned to hear non-music audio.
   masked a blurred cover and smeared neighbouring colors into every bar.
 
 ### Changed
-- The app is called **Ledge** now. Bundle and targets stay `NotchMate` so
-  macOS keeps honoring the Automation/Accessibility grants.
+- The app is **Ledge** now, all the way down: project, targets and the app
+  bundle itself (`Ledge.app`). Only two invisible legacies remain so existing
+  installs keep their data — the bundle identifier (your settings) and the
+  Application Support folder name (your shelf). Updating from a
+  `NotchMate.app` build means granting Automation and Accessibility once
+  more; the grants follow the app.
 - Cover accents are tone-mapped instead of floored: muted sleeves stay muted
   instead of turning neon, black-and-white covers with a faint color cast get
   that cast as a washed-out tint instead of plain white, and the

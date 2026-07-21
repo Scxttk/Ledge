@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="NotchMate/Assets.xcassets/AppIcon.appiconset/icon_256.png" width="128" alt="Ledge icon">
+  <img src="Ledge/Assets.xcassets/AppIcon.appiconset/icon_256.png" width="128" alt="Ledge icon">
 </p>
 
 <h1 align="center">Ledge</h1>
@@ -45,14 +45,14 @@ Every tab can be switched off in Settings if you only came for some of this.
 
 ## Getting it running
 
-Grab `Ledge-x.y.z.zip` from the [latest release](../../releases/latest), unzip it, drag `NotchMate.app` into `/Applications`.
+Grab `Ledge-x.y.z.zip` from the [latest release](../../releases/latest), unzip it, drag `Ledge.app` into `/Applications`.
 
-Yes, the app inside the zip is called `NotchMate.app` — that was the project's old name, and the bundle keeps it on purpose: macOS ties the Automation and Accessibility grants to the app's identity, and renaming the bundle would silently kill them for everyone who already granted access (see the warning below). So the name on the tin is Ledge; the tin itself stays NotchMate.
+(If you're updating from a release whose app was still called `NotchMate.app`: delete the old one, and expect macOS to ask for the Automation and Accessibility permissions again — the grant follows the app. Your settings survive; the bundle identifier deliberately stayed the same under the hood.)
 
 Gatekeeper will block the first launch — it's ad-hoc signed, since I'm not paying Apple 99 €/year to notarize a menu-bar toy. Either:
 
 ```sh
-xattr -d com.apple.quarantine /Applications/NotchMate.app
+xattr -d com.apple.quarantine /Applications/Ledge.app
 ```
 
 or let it fail once, then *System Settings → Privacy & Security → Open Anyway*.
@@ -64,10 +64,10 @@ One thing that's bitten me more than once: the Accessibility grant is tied to th
 ## Building it yourself
 
 ```sh
-xcodebuild -project NotchMate.xcodeproj -scheme NotchMate -configuration Debug build
+xcodebuild -project Ledge.xcodeproj -scheme Ledge -configuration Debug build
 ```
 
-Or `open NotchMate.xcodeproj` and hit ⌘R in Xcode 15+. No SPM, no CocoaPods — everything is a system framework, so there's nothing to fetch first.
+Or `open Ledge.xcodeproj` and hit ⌘R in Xcode 15+. No SPM, no CocoaPods — everything is a system framework, so there's nothing to fetch first.
 
 Two things worth knowing before you dig into the source: brightness control resolves the private `DisplayServices` framework at runtime via `dlopen`, so if Apple ever pulls those symbols the feature quietly turns itself off and the regular brightness keys take back over — that's the bargain you make with private APIs, and I'm fine with it. The app also isn't sandboxed; half of what it does (Apple Events to Spotify, raw CoreAudio, the CGEvent tap) isn't possible inside one.
 

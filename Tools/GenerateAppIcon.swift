@@ -1,6 +1,6 @@
 #!/usr/bin/swift
 //
-//  GenerateAppIcon.swift — NotchMate
+//  GenerateAppIcon.swift — Ledge
 //  Zeichnet das App-Icon (1a „Waveform") als 1024×1024-PNG, rein CoreGraphics.
 //  Aufruf:  swift Tools/GenerateAppIcon.swift [ausgabe.png]
 //
