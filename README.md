@@ -7,6 +7,7 @@
 <p align="center">Your Mac's notch, doing something other than hiding a camera.</p>
 
 <p align="center">
+  <a href="../../actions/workflows/build.yml"><img src="https://img.shields.io/github/actions/workflow/status/Scxttk/Ledge/build.yml?style=flat-square&label=build" alt="Build status"></a>
   <a href="../../releases/latest"><img src="https://img.shields.io/github/v/release/Scxttk/Ledge?style=flat-square&label=release" alt="Latest release"></a>
   <img src="https://img.shields.io/badge/macOS-14%2B-black?style=flat-square" alt="macOS 14+">
   <a href="LICENSE"><img src="https://img.shields.io/github/license/Scxttk/Ledge?style=flat-square" alt="MIT license"></a>
