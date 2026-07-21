@@ -91,6 +91,27 @@ final class SpectrumAnalyzer: ObservableObject {
     // the low bands stay put) to keep every bar in the same visible range.
     private static let highBandBoost: Float = 20
 
+    // Beat emphasis. The absolute window above answers "how loud is this band
+    // right now" — which for heavily compressed, loudness-normalized music
+    // (Spotify pins everything near -14 LUFS and modern masters have a few dB
+    // of short-term movement at best) means the bars find their static
+    // positions and just stand there, while dynamic material (a YouTube video,
+    // speech) dances. So each band also tracks its own recent average, and the
+    // published level leans mostly on the *deviation* from that average: a
+    // kick 6 dB over its band's norm hits the top no matter how compressed
+    // the master is, and the absolute term underneath keeps bass reading
+    // taller than treble.
+    private var averageDb: [Float]
+    private var averageSeeded = false
+    /// Seconds for a band's running average to absorb a level change.
+    private static let averageTau: Float = 1.6
+    /// Where "exactly average" sits (offset/range ≈ 0.45) and how many dB a
+    /// beat needs above its band's norm to reach the top.
+    private static let beatOffsetDb: Float = 5
+    private static let beatRangeDb: Float = 11
+    /// Mix of deviation-from-average vs absolute level in the published bar.
+    private static let beatWeight: Float = 0.65
+
     private let queue = DispatchQueue(label: "com.scott.notchmate.spectrum", qos: .userInitiated)
 
     init(bandCount: Int = 6) {
@@ -104,6 +125,7 @@ final class SpectrumAnalyzer: ObservableObject {
         self.imagp = [Float](repeating: 0, count: fftSize / 2)
         self.magnitudes = [Float](repeating: 0, count: fftSize / 2)
         self.smoothed = [Float](repeating: 0, count: bandCount)
+        self.averageDb = [Float](repeating: 0, count: bandCount)
         vDSP_hann_window(&window, vDSP_Length(fftSize), Int32(vDSP_HANN_NORM))
         fftSetup = vDSP_create_fftsetup(log2n, FFTRadix(kFFTRadix2))
     }
@@ -330,19 +352,36 @@ final class SpectrumAnalyzer: ObservableObject {
         loudnessCeilDb = max(Self.loudnessCeilMin, loudnessCeilDb)
         let floorDb = loudnessCeilDb - Self.windowWidthDb
 
+        // Fraction of the way each band's running average moves toward the
+        // current frame — time-based so the tau holds at any callback rate.
+        let averageAlpha = dt > 0 ? min(1, dt / Self.averageTau) : 1
+
         for b in 0..<bandCount {
-            // Map magnitude to dB, then to 0…1 over the (now floating) window —
-            // like a level meter, so quiet passages sit low and beats reach the
-            // top: real dynamics. Higher bands carry ~20 dB less energy, so
-            // lift them (measured) to keep every bar in the same visible range
-            // instead of pinned low.
+            // Higher bands carry ~20 dB less energy, so lift them (measured)
+            // to keep every bar in the same visible range instead of pinned low.
             let boost = Self.highBandBoost * pow(Float(b) / Float(max(1, bandCount - 1)), 1.5)
-            let norm = (rawDb[b] + boost - floorDb) / Self.windowWidthDb
-            let level = min(1, max(0, norm))
+            let boosted = rawDb[b] + boost
+
+            if !averageSeeded { averageDb[b] = boosted }
+            averageDb[b] += (boosted - averageDb[b]) * averageAlpha
+
+            // Two readings blended: the absolute level inside the floating
+            // window (keeps bass taller than treble, quiet passages low), and
+            // the deviation from this band's own recent average (makes every
+            // beat punch, however compressed the master — see `beatWeight`).
+            let absolute = min(1, max(0, (boosted - floorDb) / Self.windowWidthDb))
+            let beat = min(1, max(0, (boosted - averageDb[b] + Self.beatOffsetDb) / Self.beatRangeDb))
+            // In silence a band sits exactly at its own average, which the
+            // beat term would read as a healthy mid-level bar (and hold
+            // `hasSignal` open forever). Gate it on audibility: inaudible in
+            // absolute terms → no beat contribution either.
+            let gate = min(1, absolute * 12)
+            let level = gate * (Self.beatWeight * beat + (1 - Self.beatWeight) * absolute)
             smoothed[b] = level > smoothed[b]
                 ? smoothed[b] + (level - smoothed[b]) * attack
                 : smoothed[b] * decay
         }
+        averageSeeded = true
         if smoothed.contains(where: { $0 > Self.signalThreshold }) {
             lastSignalTime = CACurrentMediaTime()
         }
