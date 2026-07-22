@@ -130,10 +130,48 @@ final class NotchWindowController {
             forName: Notification.Name("com.scott.ledge.debug.island"), object: nil, queue: .main
         ) { [weak self] note in
             guard let self else { return }
+            if note.object as? String == "record" {
+                // Film the panel's own view tree — an app may snapshot its
+                // own window without the Screen Recording permission, which
+                // the harness driving this can't obtain. Frames land in
+                // /tmp/ledge-frames/ for eyes-on frame-by-frame review.
+                self.startDebugRecording()
+                return
+            }
             self.suppressHover = false
             self.collapseWorkItem?.cancel()
             self.setExpanded(note.object as? String == "expand")
         }
+    }
+
+    /// Captures ~2.5 s of the container view at 30 fps into memory, then
+    /// writes the frames as PNGs off the main thread. Debug-only, reachable
+    /// solely via the distributed notification above.
+    private func startDebugRecording() {
+        let frameCount = 75
+        var reps: [NSBitmapImageRep] = []
+        reps.reserveCapacity(frameCount)
+        let timer = Timer(timeInterval: 1.0 / 30.0, repeats: true) { [weak self] timer in
+            guard let self, reps.count < frameCount else {
+                timer.invalidate()
+                let finished = reps
+                DispatchQueue.global(qos: .utility).async {
+                    let dir = URL(fileURLWithPath: "/tmp/ledge-frames", isDirectory: true)
+                    try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+                    for (index, rep) in finished.enumerated() {
+                        guard let png = rep.representation(using: .png, properties: [:]) else { continue }
+                        try? png.write(to: dir.appendingPathComponent(String(format: "frame-%03d.png", index)))
+                    }
+                    try? Data().write(to: dir.appendingPathComponent("done"))
+                }
+                return
+            }
+            let bounds = self.container.bounds
+            guard let rep = self.container.bitmapImageRepForCachingDisplay(in: bounds) else { return }
+            self.container.cacheDisplay(in: bounds, to: rep)
+            reps.append(rep)
+        }
+        RunLoop.main.add(timer, forMode: .common)
     }
 
     deinit {
