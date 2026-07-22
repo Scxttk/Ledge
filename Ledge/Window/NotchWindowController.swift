@@ -644,23 +644,39 @@ final class NotchWindowController {
             stagingTarget = nil; stageWorkItem = nil
             return
         }
+        let delay = stageRestDelay(entering: next, expanding: expanding)
+        guard delay > 0 else {
+            // A skipped (no-op) stage: advance synchronously so the state
+            // writes coalesce into the same SwiftUI transaction — the first
+            // *visible* hop then animates in the very frame the walk started,
+            // instead of one runloop turn per skipped stage. Recursion is
+            // bounded by the stage list, and nothing is scheduled that could
+            // need cancelling.
+            advanceStaging()
+            return
+        }
         let work = DispatchWorkItem { [weak self] in self?.advanceStaging() }
         stageWorkItem = work
-        DispatchQueue.main.asyncAfter(
-            deadline: .now() + stageRestDelay(entering: next, expanding: expanding),
-            execute: work
-        )
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
     }
 
     /// How long to rest in an intermediate stage before advancing. Expand rests
     /// are shorter than collapse rests so opening stays responsive on hover.
+    ///
+    /// Stages that are pure no-ops for the current content skip their rest:
+    /// with the pill hero active (music, other system audio, or the focus
+    /// timer), `.condensing` and `.solo` have the pill's own geometry *and*
+    /// show the very same persistent hero view — resting there is dead time
+    /// the eye reads as hover lag on expand (200 ms of nothing before the
+    /// island moved) and as a stale oversized hit rect after collapse.
     private func stageRestDelay(entering state: NotchViewModel.IslandState, expanding: Bool) -> TimeInterval {
+        let heroContent = hasAudioHero || pomodoro.pillText != nil
         switch (state, expanding) {
         case (.band, false):       return NotchLayout.bandCollapseDelay
         case (.solo, false):       return NotchLayout.soloCollapseDelay
-        case (.condensing, false): return NotchLayout.condenseSwapDelay
-        case (.condensing, true):  return NotchLayout.condenseExpandDelay
-        case (.solo, true):        return NotchLayout.soloExpandDelay
+        case (.condensing, false): return heroContent ? 0 : NotchLayout.condenseSwapDelay
+        case (.condensing, true):  return heroContent ? 0 : NotchLayout.condenseExpandDelay
+        case (.solo, true):        return heroContent ? 0 : NotchLayout.soloExpandDelay
         case (.band, true):        return NotchLayout.bandExpandDelay
         default:                   return 0
         }

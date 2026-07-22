@@ -120,20 +120,30 @@ enum NotchLayout {
     /// Bottom padding below the page carousel when expanded.
     static let expandedBottomPadding: CGFloat = 20
 
-    /// How long the island rests in each transient stage before advancing —
-    /// long enough to read the intermediate shape, short enough that the whole
-    /// morph still feels like one continuous gesture. Collapse and expand walk
-    /// the same stages in opposite directions; expand rests are a bit shorter
-    /// so opening stays responsive on hover.
-    static let bandCollapseDelay: TimeInterval = 0.35  // .band → .solo
-    static let soloCollapseDelay: TimeInterval = 0.3   // .solo → .condensing
+    /// How long the island rests in each transient stage before advancing.
+    /// Tuned frame-by-frame (see `IslandChoreographySheetTests`): each rest is
+    /// deliberately *shorter* than the hop animation's settling time, so the
+    /// next stage retargets the spring while the silhouette is still moving —
+    /// the walk reads as one continuous gesture. At the earlier values
+    /// (0.30–0.35, ≈ the settling time) every hop braked to a near-standstill
+    /// before the next began: a visible staircase. The stages still fire in
+    /// order, so the content choreography (pages out → tabs out → labels out,
+    /// each a 0.15–0.16 s fade) keeps fitting inside its stage's rest.
+    static let bandCollapseDelay: TimeInterval = 0.18  // .band → .solo
+    static let soloCollapseDelay: TimeInterval = 0.18  // .solo → .condensing
     /// How long the condensing stage (label fades, icon centres, capsule
-    /// narrows to pill width) runs before the pill content swaps in — roughly
-    /// the collapse spring's settling time, so the swap lands on a still image.
-    static let condenseSwapDelay: TimeInterval = 0.32
-    static let condenseExpandDelay: TimeInterval = 0.1   // .condensing → .solo
-    static let soloExpandDelay: TimeInterval = 0.10      // .solo → .band
-    static let bandExpandDelay: TimeInterval = 0.12      // .band → .expanded
+    /// narrows to pill width) runs before the pill content swaps in — long
+    /// enough past the last retarget that the swap lands on a nearly still
+    /// image.
+    static let condenseSwapDelay: TimeInterval = 0.30
+    /// Expand rests are near-zero: opening must move the instant the hover
+    /// lands, and the expand hops exist as spring waypoints (each retargeted
+    /// mid-flight), not as shapes to linger on. Stages that don't change the
+    /// island at all for the current content are skipped entirely — see
+    /// `NotchWindowController.stageRestDelay`.
+    static let condenseExpandDelay: TimeInterval = 0.03  // .condensing → .solo
+    static let soloExpandDelay: TimeInterval = 0.07      // .solo → .band
+    static let bandExpandDelay: TimeInterval = 0.09      // .band → .expanded
 
     /// Fade of the labels and the unselected tabs as the capsule narrows around
     /// the surviving content. Deliberately much faster than the width spring:
