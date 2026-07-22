@@ -398,19 +398,53 @@ private struct ExpandedView: View {
     }
 }
 
+/// Debug-only geometry sink, armed via the `geometry` debug notification
+/// (see `NotchWindowController`): while enabled, `TabIcon` reports its
+/// global frame from both view trees, so the pill ⇄ tab-bar centring can be
+/// compared in the *real* app context — isolated re-renders of the same
+/// modifier chains centre identically, yet recorded frames show the tab icon
+/// ~1.5 pt left of the pill glyph.
+enum DebugGeometry {
+    nonisolated(unsafe) static var enabled = false
+    nonisolated(unsafe) private static var lines: [String] = []
+
+    static func log(_ context: String, _ frame: CGRect) {
+        guard enabled else { return }
+        lines.append(String(format: "%.3f %@ minX=%.2f w=%.2f midX=%.2f midY=%.2f",
+                            Date().timeIntervalSinceReferenceDate, context,
+                            frame.minX, frame.width, frame.midX, frame.midY))
+    }
+
+    static func dump() {
+        try? lines.joined(separator: "\n")
+            .write(toFile: "/tmp/ledge-geometry.txt", atomically: true, encoding: .utf8)
+        lines.removeAll()
+        enabled = false
+    }
+}
+
 /// A tab's glyph: its SF Symbol, or its emoji where none exists (the Claude
 /// tab's crab). Emoji ignore `foregroundStyle`, so the dimming the symbols get
 /// from the surrounding style is applied here as opacity.
 private struct TabIcon: View {
     let tab: NotchViewModel.Tab
     var dimmed = false
+    /// Set to a label to report this icon's global frame to `DebugGeometry`.
+    var debugContext: String?
 
     var body: some View {
-        if let emoji = tab.emojiIcon {
-            Text(emoji)
-                .opacity(dimmed ? Double(NotchLayout.tabInactiveOpacity) : 1)
-        } else {
-            Image(systemName: tab.icon)
+        Group {
+            if let emoji = tab.emojiIcon {
+                Text(emoji)
+                    .opacity(dimmed ? Double(NotchLayout.tabInactiveOpacity) : 1)
+            } else {
+                Image(systemName: tab.icon)
+            }
+        }
+        .onGeometryChange(for: CGRect.self) { proxy in
+            proxy.frame(in: .global)
+        } action: { frame in
+            if let debugContext { DebugGeometry.log(debugContext, frame) }
         }
     }
 }
@@ -461,7 +495,7 @@ private struct NotchTabBar: View {
                     // Every icon renders itself, always — switching tabs must only
                     // change the highlight (foreground opacity), never replace or
                     // move the icon view, or it visibly pops back in.
-                    TabIcon(tab: value, dimmed: !isSelected)
+                    TabIcon(tab: value, dimmed: !isSelected, debugContext: "tab-\(value)")
                     // The label stays in the layout even when hidden (fixed size,
                     // opacity only) so the mirror stays balanced; it just fades
                     // fast while the capsule narrows over it.
@@ -642,7 +676,7 @@ private struct CollapsedView: View {
             } else if pomodoro.pillText == nil {
                 // Idle glyph reflects the tab you'd return to, so it isn't
                 // always the music icon when you last used another tab.
-                TabIcon(tab: viewModel.selectedTab)
+                TabIcon(tab: viewModel.selectedTab, debugContext: "pill")
                     .font(.system(size: NotchLayout.bandFontSize, weight: .medium))
             }
 

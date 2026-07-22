@@ -138,6 +138,13 @@ final class NotchWindowController {
                 self.startDebugRecording()
                 return
             }
+            if note.object as? String == "geometry" {
+                // Arm the TabIcon frame reporter for 4 s, then dump to
+                // /tmp/ledge-geometry.txt (see `DebugGeometry`).
+                DebugGeometry.enabled = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 4) { DebugGeometry.dump() }
+                return
+            }
             self.suppressHover = false
             self.collapseWorkItem?.cancel()
             self.setExpanded(note.object as? String == "expand")

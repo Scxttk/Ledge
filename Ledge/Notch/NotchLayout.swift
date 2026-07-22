@@ -133,15 +133,17 @@ enum NotchLayout {
     static let soloCollapseDelay: TimeInterval = 0.18  // .solo → .condensing
     /// How long the condensing stage (label fades, icon centres, capsule
     /// narrows to pill width) runs before the pill content swaps in. This
-    /// must outlast the *icon's* travel, not just the capsule's: the icon
-    /// starts re-centring when the mirror label inserts at `.solo`
-    /// (`soloCollapseDelay` earlier) and rides the same `smooth(0.55)`
-    /// spring, so it settles ≈ 0.6 s after `.solo`. At 0.30 the swap caught
-    /// it still ~2 pt shy of centre and the pill glyph appeared at the final
-    /// position — a visible terminal hop (measured on recorded frames:
-    /// outgoing icon at 517 px, incoming glyph at 520.6 px). 0.42 puts the
-    /// swap after the measured settle.
-    static let condenseSwapDelay: TimeInterval = 0.42
+    /// must outlast the *icon's* travel, not just the capsule's — and that
+    /// travel is long: the icon flies from its tab-bar slot to the capsule
+    /// centre (~155 pt, measured via the in-app geometry logger) on the
+    /// `smooth(0.55)` spring that starts at `.solo`. A critically damped
+    /// spring still carries ~0.8% of a 155 pt travel 0.6 s in — ≈ 1.3 pt,
+    /// which the hard-cut handover turned into a visible terminal hop at the
+    /// earlier 0.30/0.42 values. 0.55 puts the swap ≈ 0.73 s after `.solo`
+    /// (residual ≈ 0.3 pt, sub-pixel). The extra wait is invisible: the
+    /// silhouette has settled long before, the island just holds a
+    /// pill-identical still until the swap.
+    static let condenseSwapDelay: TimeInterval = 0.55
     /// Expand rests are near-zero: opening must move the instant the hover
     /// lands, and the expand hops exist as spring waypoints (each retargeted
     /// mid-flight), not as shapes to linger on. Stages that don't change the
