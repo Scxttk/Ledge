@@ -54,6 +54,13 @@ that had been hiding since the spectrum tap learned to hear non-music audio.
 - Beat peaks overdrive a bar's tip (and its glow) toward white-hot, like a
   VU meter pushed into the red — only levels above 70% reach it, so it reads
   as energy, not as a palette change.
+- The expand animation stopped dropping frames. Profiling the live app
+  showed the island's drop shadow and rim gradient being software-rendered
+  on the main thread for every frame of the morph, the wave's bars each
+  rasterizing their own gradient and glow 30× a second, and all five tab
+  pages being built mid-spring. The chrome and the wave are GPU-composited
+  now, and the pages mount only once the island has come to rest — shape
+  first, content into a still frame.
 - The spectrum got stage lighting: no more grey-washed edge bars (the Shades
   style is a full-saturation brightness ramp now), gradients run through up to
   three colors the cover actually contains, and every bar throws a glow that

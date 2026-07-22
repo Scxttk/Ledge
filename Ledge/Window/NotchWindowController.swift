@@ -15,6 +15,11 @@ final class NotchWindowController {
     /// Pending "advance to the next stage" step of the staged expand/collapse
     /// walk, so a direction change mid-walk can cancel it and reverse.
     private var stageWorkItem: DispatchWorkItem?
+    /// Pending "the island has rested, mount the pages" step after the final
+    /// expand hop (see `NotchLayout.pagesSettleDelay`). Cancelled whenever a
+    /// new walk starts; the view model clears the flag itself on any step
+    /// away from `.expanded`.
+    private var pagesWorkItem: DispatchWorkItem?
     /// Where the staged walk is currently heading (`.expanded` or `.collapsed`),
     /// or nil when the island is at rest. Guards against hover events restarting
     /// a walk that's already going the right way.
@@ -606,14 +611,19 @@ final class NotchWindowController {
         }
         guard staged else {
             stageWorkItem?.cancel(); stageWorkItem = nil
+            pagesWorkItem?.cancel(); pagesWorkItem = nil
             stagingTarget = nil
             withAnimation(NotchLayout.islandExpandAnimation) { viewModel.islandState = target }
+            // The hotkey jump wants its content now (the capture field is the
+            // whole point); the mount hitch is acceptable without a walk.
+            if expanded { viewModel.pagesSettled = true }
             Haptics.perform(.levelChange)
             updateClickThrough()
             return
         }
         guard stagingTarget != target else { return }  // already walking there
         stageWorkItem?.cancel(); stageWorkItem = nil
+        pagesWorkItem?.cancel(); pagesWorkItem = nil
         stagingTarget = target
         // One tap the moment the morph is triggered — not per stage, which felt
         // like too much.
@@ -659,6 +669,17 @@ final class NotchWindowController {
 
         guard next != target else {
             stagingTarget = nil; stageWorkItem = nil
+            if next == .expanded {
+                // The walk has landed: let the final spring's fast phase play
+                // out on the empty island, then mount the page carousel into
+                // a nearly still frame (see `pagesSettleDelay`).
+                let work = DispatchWorkItem { [weak self] in
+                    self?.pagesWorkItem = nil
+                    self?.viewModel.pagesSettled = true
+                }
+                pagesWorkItem = work
+                DispatchQueue.main.asyncAfter(deadline: .now() + NotchLayout.pagesSettleDelay, execute: work)
+            }
             return
         }
         let delay = stageRestDelay(entering: next, expanding: expanding)

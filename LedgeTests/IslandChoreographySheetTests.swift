@@ -448,7 +448,7 @@ final class IslandChoreographySheetTests: XCTestCase {
         let lanes = expandLanes(for: walk, hero: hero)
         let expandedTime = walk.events.first { $0.state == .expanded }?.time ?? 0
         let pageIn: (Double) -> Double = { [self] t in
-            easeOut((t - expandedTime - 0.05) / 0.35)
+            easeOut((t - expandedTime - NotchLayout.pagesSettleDelay - 0.05) / 0.35)
         }
         let scale = 0.42
         let cellW = 460.0 * scale + 8, cellH = 212.0 * scale + 22

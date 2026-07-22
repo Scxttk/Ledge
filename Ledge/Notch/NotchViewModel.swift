@@ -55,7 +55,21 @@ final class NotchViewModel: ObservableObject {
         case collapsed
     }
 
-    @Published var islandState: IslandState = .collapsed
+    @Published var islandState: IslandState = .collapsed {
+        didSet {
+            // Any step away from rest invalidates the mounted pages — the
+            // collapse-side removal fade keys off this flipping false at the
+            // very first collapse hop, and a later expand must re-earn it
+            // via the controller's settle timer (see `pagesSettleDelay`).
+            if islandState != .expanded { pagesSettled = false }
+        }
+    }
+
+    /// True once the island has rested in `.expanded` long enough to afford
+    /// mounting the page carousel (the heaviest view-building moment).
+    /// Set by the controller; cleared automatically whenever the island
+    /// leaves `.expanded`.
+    @Published var pagesSettled = false
 
     /// The logical open/closed state — `.band` counts as closed (it's a
     /// transient stop on the way down; hover/gesture logic treats it like the

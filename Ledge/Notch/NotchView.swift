@@ -94,27 +94,47 @@ struct NotchRootView: View {
         // to the bounds of the view it's attached to. Without the frame those
         // bounds are the (full-size) content, so nothing gets clipped and the
         // content floats over the wallpaper without black behind it.
-        return shape
-            .fill(NotchLayout.islandFill)
+        // The island's chrome — black fill, drop shadow, hairline rim — is
+        // flattened into one GPU-composited layer. Rendered plainly, the
+        // shadow's gaussian blur and the rim's gradient are rasterized by
+        // CoreGraphics on the main thread for *every* frame of the morph
+        // (and, before the shadow was decoupled from the content, for every
+        // 30 Hz spectrum tick too) — `sample` showed exactly this shading
+        // work under the expand jank. The symmetric padding gives the
+        // flattened canvas room for the blur; the content stays outside the
+        // group, because flattening kills AppKit-backed subviews (the
+        // capture field).
+        let chrome = ZStack {
+            shape
+                .fill(NotchLayout.islandFill)
+                .shadow(
+                    color: .black.opacity(viewModel.isExpanded ? NotchLayout.islandShadowOpacityExpanded : NotchLayout.islandShadowOpacityCollapsed),
+                    radius: NotchLayout.islandShadowRadius,
+                    y: NotchLayout.islandShadowYOffset
+                )
+            // Hairline rim, brightest along the top edge: separates the
+            // near-black island from a dark menu bar / wallpaper.
+            shape.strokeBorder(
+                LinearGradient(
+                    colors: [
+                        .white.opacity(NotchLayout.islandStrokeTopOpacity),
+                        .white.opacity(NotchLayout.islandStrokeBottomOpacity),
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                ),
+                lineWidth: NotchLayout.islandStrokeWidth
+            )
+        }
+        .padding(40)
+        .drawingGroup()
+        .padding(-40)
+
+        return chrome
             .overlay(
                 content
                     .frame(width: islandWidth, height: islandHeight, alignment: .top)
                     .clipShape(shape)
-            )
-            .overlay(
-                // Hairline rim, brightest along the top edge: separates the
-                // near-black island from a dark menu bar / wallpaper.
-                shape.strokeBorder(
-                    LinearGradient(
-                        colors: [
-                            .white.opacity(NotchLayout.islandStrokeTopOpacity),
-                            .white.opacity(NotchLayout.islandStrokeBottomOpacity),
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    ),
-                    lineWidth: NotchLayout.islandStrokeWidth
-                )
             )
             .frame(width: islandWidth, height: islandHeight)
             // Settings changes alter the pill's width formula outside the
@@ -122,11 +142,6 @@ struct NotchRootView: View {
             .animation(NotchLayout.islandMorphAnimation, value: settings.pillSpectrumOnly)
             .animation(NotchLayout.islandMorphAnimation, value: settings.pillSpectrumWidth)
             .animation(NotchLayout.islandMorphAnimation, value: settings.pillSpectrumBarCount)
-            .shadow(
-                color: .black.opacity(viewModel.isExpanded ? NotchLayout.islandShadowOpacityExpanded : NotchLayout.islandShadowOpacityCollapsed),
-                radius: NotchLayout.islandShadowRadius,
-                y: NotchLayout.islandShadowYOffset
-            )
     }
 
     @ViewBuilder private var content: some View {
@@ -313,8 +328,12 @@ private struct ExpandedView: View {
     /// False during the band collapse stage: the island has shrunk to just the
     /// tab-bar capsule, the pages are gone, only the bar remains (and must stay
     /// the *same view* as in the expanded state, or its icons would visibly
-    /// re-appear instead of simply staying put).
-    private var showsPages: Bool { viewModel.islandState == .expanded }
+    /// re-appear instead of simply staying put). Also false until the island
+    /// has *rested* in `.expanded` for a beat (`pagesSettled`): building all
+    /// five pages is the heaviest view-mount of the app, and doing it
+    /// mid-spring dropped frames — the shape morphs first, the content
+    /// materialises into a nearly still island.
+    private var showsPages: Bool { viewModel.islandState == .expanded && viewModel.pagesSettled }
 
     var body: some View {
         VStack(spacing: showsPages ? NotchLayout.expandedRowSpacing : 0) {

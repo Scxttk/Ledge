@@ -313,6 +313,15 @@ enum NotchLayout {
     /// Opacity of the non-front tab pages while the carousel slides.
     static let tabPageInactiveOpacity: CGFloat = 0.3
 
+    /// How long after the island reaches `.expanded` the page carousel is
+    /// allowed to mount. Building all five tab pages is the single heaviest
+    /// main-thread moment of the whole walk, and it used to land exactly
+    /// mid-flight of the final spring — a visible dropped-frame hitch
+    /// (Scott: "ruckelig"). Deferred past the spring's fast phase, the shape
+    /// morphs on an empty island and the content materialises into a nearly
+    /// still frame — the iPhone's own trick.
+    static let pagesSettleDelay: TimeInterval = 0.18
+
     /// How long CaptureView waits before mounting its AppKit-backed text field.
     /// NSTextField ignores SwiftUI clip shapes, so the real field must not exist
     /// while the island morph (spring response 0.42) or the tab carousel spring

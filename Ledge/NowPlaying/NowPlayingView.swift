@@ -499,6 +499,15 @@ struct WaveBarsView: View {
             .animation(.easeInOut(duration: 0.4), value: secondaryTint)
             .animation(.easeInOut(duration: 0.4), value: tertiaryTint)
             .animation(.easeInOut(duration: 0.4), value: coverBars)
+            // Flatten the whole wave into one GPU-composited layer. Without
+            // this, every bar's gradient fill and glow shadow is rasterized
+            // by CoreGraphics on the main thread, 30×/s — `sample` showed
+            // rgba64 gradient shading dominating the expand jank. The
+            // symmetric padding keeps the flattened canvas large enough that
+            // the outermost bars' glow isn't clipped at its edge.
+            .padding(8)
+            .drawingGroup()
+            .padding(-8)
         } else {
             TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !isActive)) { timeline in
                 let time = timeline.date.timeIntervalSinceReferenceDate
@@ -512,8 +521,12 @@ struct WaveBarsView: View {
                 .frame(maxHeight: .infinity, alignment: .center)
                 .animation(.easeInOut(duration: 0.4), value: tint)
                 .animation(.easeInOut(duration: 0.4), value: secondaryTint)
-            .animation(.easeInOut(duration: 0.4), value: tertiaryTint)
+                .animation(.easeInOut(duration: 0.4), value: tertiaryTint)
                 .animation(.easeInOut(duration: 0.4), value: coverBars)
+                // Same GPU flattening as the live-bands branch (see above).
+                .padding(8)
+                .drawingGroup()
+                .padding(-8)
             }
         }
     }
