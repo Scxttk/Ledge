@@ -44,6 +44,13 @@ that had been hiding since the spectrum tap learned to hear non-music audio.
   rims), so it reads as a swell instead of a rectangle.
 - The island opens with a visible overshoot-and-settle now, like the iPhone's.
   Closing stays deliberately calm — overshoot on the way out reads wrong.
+- Opening and closing are one continuous gesture now, verified frame by frame
+  with a new choreography test that renders the staged walk through its real
+  spring curves. While music plays, the island used to sit still for 200 ms
+  before opening (two stages of the walk change nothing in that case — they're
+  skipped now), and closing braked to a near-standstill at every intermediate
+  stage because the rests matched the spring's settling time. Each stage now
+  retargets the spring while the silhouette is still moving.
 - The spectrum got stage lighting: no more grey-washed edge bars (the Shades
   style is a full-saturation brightness ramp now), gradients run through up to
   three colors the cover actually contains, and every bar throws a glow that
