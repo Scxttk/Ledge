@@ -157,22 +157,11 @@ enum NotchLayout {
     /// position, or clipped letter fragments linger at the rim.
     static let condenseFadeAnimation: Animation = .easeOut(duration: 0.15)
 
-    /// The arriving view fades in *on top* of the still-opaque departing one
-    /// over this duration; the departing view only leaves once the newcomer is
-    /// fully in (see `iconHandover`). Holding one layer opaque the whole time is
-    /// what kills the crossfade brightness dip — the "flicker". The whole
-    /// handover (fade-in + cut) must fit inside the expand walk's
-    /// time-to-`.band` (`condenseExpandDelay` + `soloExpandDelay` = 0.10):
-    /// the hold-opaque trick only works while the two icons sit superposed,
-    /// and at `.band` the tab-bar icon starts flying to its slot — the
-    /// departing pill icon has to be *fully gone* by then, or it stands at
-    /// the capsule centre as a doubled glyph while its twin flies away
-    /// (frame-by-frame this was plainly visible at 0.13–0.17 s).
-    static let pillHandoverFade: TimeInterval = 0.05
-    /// Duration of the departing layer's cut once the newcomer is fully in (the
-    /// removal side of `iconHandover`), after the `pillHandoverFade` delay.
-    /// Fade + cut = 0.10 = the moment the flight starts.
-    static let pillHandoverRemoveFade: TimeInterval = 0.05
+    // The pill ⇄ condensed-icon handover is a hard cut (see `iconHandover`
+    // in NotchView) — it deliberately has no timing constants: every
+    // overlap-based variant (crossfade, hold-opaque) drew both near-identical
+    // glyphs at once and their sub-point offset read as a brightness blink.
+
     /// Delay before the *unselected* tabs fade in once the band assembles on
     /// expand. The selected icon travels from the capsule centre to its slot
     /// during the band/final hops, passing over its neighbours' positions —

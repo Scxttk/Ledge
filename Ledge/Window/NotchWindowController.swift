@@ -144,14 +144,14 @@ final class NotchWindowController {
         }
     }
 
-    /// Captures ~2.5 s of the container view at 30 fps into memory, then
+    /// Captures ~1.5 s of the container view at 60 fps into memory, then
     /// writes the frames as PNGs off the main thread. Debug-only, reachable
     /// solely via the distributed notification above.
     private func startDebugRecording() {
-        let frameCount = 75
+        let frameCount = 90
         var reps: [NSBitmapImageRep] = []
         reps.reserveCapacity(frameCount)
-        let timer = Timer(timeInterval: 1.0 / 30.0, repeats: true) { [weak self] timer in
+        let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] timer in
             guard let self, reps.count < frameCount else {
                 timer.invalidate()
                 let finished = reps

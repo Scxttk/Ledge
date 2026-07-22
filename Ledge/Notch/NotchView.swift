@@ -205,18 +205,16 @@ private extension AnyTransition {
         )
     }
 
-    /// The pill ⇄ condensed-icon handover, used by *both* layers so it works
-    /// symmetrically in either direction: whichever view is arriving fades in,
-    /// while the departing one *holds fully opaque* until the newcomer is all
-    /// the way in, then cuts. One layer is always at full opacity, so there's
-    /// no crossfade brightness dip (the "flicker") — and since the condensed
-    /// icon and the pill icon are pixel-identical, the swap is invisible.
-    static var iconHandover: AnyTransition {
-        .asymmetric(
-            insertion: .opacity.animation(.easeOut(duration: NotchLayout.pillHandoverFade)),
-            removal: .opacity.animation(.easeIn(duration: NotchLayout.pillHandoverRemoveFade).delay(NotchLayout.pillHandoverFade))
-        )
-    }
+    /// The pill ⇄ condensed-icon handover: a hard, atomic cut. The two views
+    /// are near-pixel-identical by construction (same glyph, same size, same
+    /// centre — and the swap fires only once the condensed icon has settled,
+    /// see `condenseSwapDelay`), so a one-frame swap is invisible. Any
+    /// overlap-based scheme is *not*: the earlier hold-opaque handover drew
+    /// both copies at once for ~0.1 s, and with sub-point offsets between the
+    /// two view trees the union read as the glyph bolding up and thinning
+    /// back — a visible end-of-collapse blink (measured on recorded frames:
+    /// white pixel energy doubled for ~4 frames).
+    static var iconHandover: AnyTransition { .identity }
 
     /// Cross-dissolve used when music plays and the tab bar hands off to the
     /// now-playing pill hero (cover + spectrum) — in both directions. The

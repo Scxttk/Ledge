@@ -272,16 +272,15 @@ final class IslandChoreographySheetTests: XCTestCase {
             ]
         }
 
-        // Idle: pill icon hands over to the (identical) tab icon, which then
-        // flies to its slot; the other tabs join once the flight is home.
+        // Idle: pill icon hands over to the (identical) tab icon via a hard
+        // cut at walk start, the tab icon flies to its slot, and the other
+        // tabs join once the flight is home.
         let flight = flightCurve(bandTime: bandTime, expandedTime: expandedTime, duration: duration)
-        let holdEnd = NotchLayout.pillHandoverFade
-        let cut = NotchLayout.pillHandoverRemoveFade
         let joinStart = bandTime + NotchLayout.tabJoinFadeDelay
         let joinFade = 0.15  // condenseFadeAnimation
         return [
-            ContentLane(label: "pill icon (ghost)", color: .red) { [self] t in
-                1 - easeIn((t - holdEnd) / cut)
+            ContentLane(label: "pill icon (ghost)", color: .red) { t in
+                t < 0 ? 1 : 0  // hard cut: gone the instant the walk starts
             },
             ContentLane(label: "icon flight", color: .white) { t in
                 let index = Int(t * 240)
