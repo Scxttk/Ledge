@@ -435,6 +435,104 @@ final class IslandChoreographySheetTests: XCTestCase {
         .background(Color(white: 0.6))
     }
 
+    /// Composite filmstrip: silhouette *and* content layers together, drawn
+    /// from the same curves — the closest thing to the real screen this
+    /// harness can produce. "Feels slightly buggy" lives here: each layer can
+    /// be individually correct while their composition looks broken.
+    private func compositeStripView(for walk: Walk, hero: Bool) -> some View {
+        let fps = 30.0
+        let duration = walk.frames.last?.time ?? 0
+        let sampled = stride(from: 0.0, through: duration, by: 1 / fps).map { t in
+            walk.frames.min(by: { abs($0.time - t) < abs($1.time - t) })!
+        }
+        let lanes = expandLanes(for: walk, hero: hero)
+        let expandedTime = walk.events.first { $0.state == .expanded }?.time ?? 0
+        let pageIn: (Double) -> Double = { [self] t in
+            easeOut((t - expandedTime - 0.05) / 0.35)
+        }
+        let scale = 0.42
+        let cellW = 460.0 * scale + 8, cellH = 212.0 * scale + 22
+        let columns = 6
+        let rows = (sampled.count + columns - 1) / columns
+        let width = Double(columns) * (cellW + 4) + 16
+        let height = Double(rows) * (cellH + 4) + 30
+
+        return Canvas { ctx, _ in
+            ctx.fill(Path(CGRect(x: 0, y: 0, width: width, height: height)), with: .color(Color(white: 0.62)))
+            ctx.draw(
+                Text("\(walk.name) — composite, 30 fps").font(.system(size: 12, weight: .semibold)).foregroundStyle(.white),
+                at: CGPoint(x: 10, y: 12), anchor: .leading
+            )
+            for (i, f) in sampled.enumerated() {
+                let col = i % columns, row = i / columns
+                let ox = 8 + Double(col) * (cellW + 4)
+                let oy = 24 + Double(row) * (cellH + 4)
+                let cx = ox + cellW / 2
+                let island = CGRect(
+                    x: cx - f.width * scale / 2, y: oy,
+                    width: f.width * scale, height: f.height * scale
+                )
+                let shape = Path(roundedRect: island, cornerRadius: f.corner * scale)
+                ctx.fill(shape, with: .color(.black))
+
+                ctx.drawLayer { layer in
+                    layer.clip(to: shape)
+                    let bandY = oy + 15 * scale  // centre of the pill/tab band
+
+                    func dot(_ x: Double, _ opacity: Double, _ color: Color = .white) {
+                        guard opacity > 0.01 else { return }
+                        let r = 5.5 * scale
+                        layer.fill(
+                            Path(ellipseIn: CGRect(x: x - r, y: bandY - r, width: 2 * r, height: 2 * r)),
+                            with: .color(color.opacity(opacity)))
+                    }
+                    let slots = (0..<5).map { cx + (Double($0) - 2) * 62 * scale }
+
+                    if hero {
+                        // Departing wave (9 bars, 74 pt), arriving tab dots.
+                        let waveOut = lanes[0].value(f.time)
+                        if waveOut > 0.01 {
+                            let heights: [Double] = [0.4, 0.7, 1.0, 0.6, 0.9, 0.5, 0.8, 0.45, 0.65]
+                            for (b, hgt) in heights.enumerated() {
+                                let bx = cx + (Double(b) - 4) * 8.5 * scale
+                                let bh = 18 * scale * hgt
+                                layer.fill(
+                                    Path(roundedRect: CGRect(x: bx - 1.2, y: bandY - bh / 2, width: 2.4, height: bh), cornerRadius: 1.2),
+                                    with: .color(Color.cyan.opacity(waveOut)))
+                            }
+                        }
+                        let tabsIn = lanes[1].value(f.time)
+                        for slot in slots { dot(slot, tabsIn) }
+                    } else {
+                        // Ghost at centre, selected icon flying to slot 0,
+                        // the other tabs joining at their slots.
+                        dot(cx, lanes[0].value(f.time), .red)
+                        let flight = lanes[1].value(f.time)
+                        dot(cx + (slots[0] - cx) * flight, 1.0)
+                        let others = lanes[2].value(f.time)
+                        for slot in slots.dropFirst() { dot(slot, others, .green) }
+                    }
+
+                    // The page content growing in below the band.
+                    let pages = pageIn(f.time)
+                    if pages > 0.01 {
+                        let inset = 16 * scale
+                        let rect = CGRect(
+                            x: island.minX + inset, y: oy + 34 * scale,
+                            width: island.width - 2 * inset,
+                            height: max(0, island.height - 34 * scale - 20 * scale))
+                        layer.fill(Path(roundedRect: rect, cornerRadius: 4), with: .color(.white.opacity(0.16 * pages)))
+                    }
+                }
+                ctx.draw(
+                    Text(String(format: "%.2fs", f.time)).font(.system(size: 7)).foregroundStyle(.black.opacity(0.7)),
+                    at: CGPoint(x: cx, y: oy + cellH - 8), anchor: .center
+                )
+            }
+        }
+        .frame(width: width, height: height)
+    }
+
     private func write<V: View>(_ view: V, name: String) throws {
         let renderer = ImageRenderer(content: view)
         renderer.scale = 2
@@ -483,6 +581,8 @@ final class IslandChoreographySheetTests: XCTestCase {
         let heroLanes = expandLanes(for: walks[0], hero: true)
         try write(lanesView(for: walks[2], lanes: idleLanes), name: "lanes-expand-idle")
         try write(lanesView(for: walks[0], lanes: heroLanes), name: "lanes-expand-hero")
+        try write(compositeStripView(for: walks[0], hero: true), name: "composite-expand-hero")
+        try write(compositeStripView(for: walks[2], hero: false), name: "composite-expand-idle")
 
         let duration = walks[2].frames.last?.time ?? 1
         var t = 0.0
@@ -499,11 +599,18 @@ final class IslandChoreographySheetTests: XCTestCase {
                 XCTAssertGreaterThan(flight, 0.85,
                     "t=\(t): other tabs fading in while the selected icon is still mid-flight")
             }
-            // Hero: never two content layers strongly visible at once.
+            // The doubled-glyph bug: once the selected icon has visibly left
+            // the centre, the departing pill icon must already be gone.
+            if flight > 0.05 {
+                XCTAssertLessThan(ghost, 0.05,
+                    "t=\(t): pill ghost still visible while its twin is mid-flight")
+            }
+            // Hero: sequenced, not overlapped — the wave and the tab bar must
+            // never be substantially visible at the same time.
             let waveOut = heroLanes[0].value(t)
             let tabsIn = heroLanes[1].value(t)
-            XCTAssertFalse(waveOut > 0.8 && tabsIn > 0.8,
-                "t=\(t): wave and tab bar both near-opaque")
+            XCTAssertFalse(waveOut > 0.25 && tabsIn > 0.25,
+                "t=\(t): wave and tab bar visibly overlapping")
             t += 1.0 / 120.0
         }
 

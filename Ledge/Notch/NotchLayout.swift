@@ -154,16 +154,19 @@ enum NotchLayout {
     /// The arriving view fades in *on top* of the still-opaque departing one
     /// over this duration; the departing view only leaves once the newcomer is
     /// fully in (see `iconHandover`). Holding one layer opaque the whole time is
-    /// what kills the crossfade brightness dip — the "flicker". Deliberately
-    /// equal to the expand walk's time-to-`.band` (`condenseExpandDelay` +
-    /// `soloExpandDelay`): the hold-opaque trick only works while the two
-    /// icons sit superposed, and at `.band` the tab-bar icon starts flying to
-    /// its slot — the departing pill icon must cut exactly then, or it lingers
-    /// as a doubled glyph at the capsule centre.
-    static let pillHandoverFade: TimeInterval = 0.10
+    /// what kills the crossfade brightness dip — the "flicker". The whole
+    /// handover (fade-in + cut) must fit inside the expand walk's
+    /// time-to-`.band` (`condenseExpandDelay` + `soloExpandDelay` = 0.10):
+    /// the hold-opaque trick only works while the two icons sit superposed,
+    /// and at `.band` the tab-bar icon starts flying to its slot — the
+    /// departing pill icon has to be *fully gone* by then, or it stands at
+    /// the capsule centre as a doubled glyph while its twin flies away
+    /// (frame-by-frame this was plainly visible at 0.13–0.17 s).
+    static let pillHandoverFade: TimeInterval = 0.05
     /// Duration of the departing layer's cut once the newcomer is fully in (the
     /// removal side of `iconHandover`), after the `pillHandoverFade` delay.
-    static let pillHandoverRemoveFade: TimeInterval = 0.08
+    /// Fade + cut = 0.10 = the moment the flight starts.
+    static let pillHandoverRemoveFade: TimeInterval = 0.05
     /// Delay before the *unselected* tabs fade in once the band assembles on
     /// expand. The selected icon travels from the capsule centre to its slot
     /// during the band/final hops, passing over its neighbours' positions —
@@ -179,12 +182,14 @@ enum NotchLayout {
     /// for a smooth dissolve as the capsule narrows.
     static let heroCrossfadeDuration: TimeInterval = 0.24
     /// The arriving side of the hero crossfade starts this much later than the
-    /// departing side: the capsule is still springing toward the arriving
-    /// content's size when the handover fires, and fading the newcomer in at
-    /// full tilt painted it over the still-visible departing content inside a
-    /// too-small capsule. The silhouette leads, its content follows. The
-    /// departing fade covers this delay, so there is no empty-capsule gap.
-    static let heroCrossfadeInsertDelay: TimeInterval = 0.10
+    /// departing side — sequenced, not overlapped: the wave dissolves first,
+    /// *then* the tab bar materialises. At a shorter delay the two were both
+    /// half-visible for ~0.14 s (the composite filmstrip showed tab icons
+    /// appearing around a still-visible wave — the "mush" that read as
+    /// buggy). Set to the crossfade duration minus a hair, so the departing
+    /// side is ≥ 90% gone before the arriving side begins; the black island
+    /// carries the brief quiet moment between them.
+    static let heroCrossfadeInsertDelay: TimeInterval = 0.22
 
     /// Width of the collapsed pill while a live activity is showing.
     static let activityWidth: CGFloat = 220
