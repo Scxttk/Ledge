@@ -391,23 +391,35 @@ struct WaveBarsView: View {
     /// when a column's two halves land on one palette entry the gradient is
     /// spread by brightness instead, keeping each bar from reading as a flat
     /// slab without reintroducing the old multi-colour smear.
-    private func coverFill(forBarAt index: Int, total: Int) -> LinearGradient? {
+    /// How far a bar's tip is driven into white at this level: nothing below
+    /// 0.7, then ramping to a 60% white blend at full deflection — an
+    /// overdriven-VU-meter incandescence that only the beat peaks reach, so
+    /// it reads as *energy*, not as a palette change.
+    private func incandescence(at level: CGFloat) -> Double {
+        Double(max(0, (min(1, level) - 0.7) / 0.3)) * 0.6
+    }
+
+    private func coverFill(forBarAt index: Int, total: Int, level: CGFloat) -> LinearGradient? {
         guard let pair = coverBars?.pair(forBarAt: index, total: total) else { return nil }
         let (top, bottom) = pair.top == pair.bottom
             ? (pair.top, Color.brightnessScaled(pair.bottom, 0.92))
             : pair
-        return LinearGradient(colors: [top, bottom], startPoint: .top, endPoint: .bottom)
+        return LinearGradient(
+            colors: [Color.whitened(top, incandescence(at: level)), bottom],
+            startPoint: .top, endPoint: .bottom
+        )
     }
 
-    private func barFill(forBarAt index: Int, total: Int) -> AnyShapeStyle {
-        if settings.spectrumStyle == .coverImage, let fill = coverFill(forBarAt: index, total: total) {
+    private func barFill(forBarAt index: Int, total: Int, level: CGFloat) -> AnyShapeStyle {
+        if settings.spectrumStyle == .coverImage, let fill = coverFill(forBarAt: index, total: total, level: level) {
             return AnyShapeStyle(fill)
         }
         // Depth: full colour at the tip falling to ~72% brightness at the
-        // base, so a tall bar reads as lit from its top rather than printed.
+        // base, so a tall bar reads as lit from its top rather than printed —
+        // and at beat peaks the tip overdrives toward white-hot.
         let color = barColor(forBarAt: index, total: total)
         return AnyShapeStyle(LinearGradient(
-            colors: [color, Color.brightnessScaled(color, 0.72)],
+            colors: [Color.whitened(color, incandescence(at: level)), Color.brightnessScaled(color, 0.72)],
             startPoint: .top, endPoint: .bottom
         ))
     }
@@ -425,13 +437,19 @@ struct WaveBarsView: View {
     /// pixel height — it drives the glow.
     private func bar(_ height: CGFloat, level: CGFloat, index: Int, total: Int) -> some View {
         let boosted = max(0, min(1, level))
+        // The halo bleaches with the tip: a peaking bar throws hotter,
+        // whiter light than one idling at its running average.
+        let glow = Color.whitened(
+            glowColor(forBarAt: index, total: total),
+            incandescence(at: level) * 0.5
+        )
         return Capsule()
-            .fill(barFill(forBarAt: index, total: total))
+            .fill(barFill(forBarAt: index, total: total, level: level))
             .frame(width: barWidth, height: height)
             // The spectacle: every bar throws its own light, and louder bands
             // glow harder. On the pure black island this halo is what makes
             // the wave read as alive rather than printed on.
-            .shadow(color: glowColor(forBarAt: index, total: total).opacity(0.35 + 0.45 * boosted),
+            .shadow(color: glow.opacity(0.35 + 0.45 * boosted),
                     radius: 1 + 3.5 * boosted)
     }
 
@@ -563,6 +581,18 @@ private extension Color {
         let scaled = clamped * Double(stops.count - 1)
         let index = min(stops.count - 2, Int(scaled))
         return hsbMix(stops[index], stops[index + 1], t: scaled - Double(index))
+    }
+
+    /// Blend toward white by `amount` (0 = unchanged, 1 = white) in HSB:
+    /// saturation drains as brightness rises, like a colour overdriven into
+    /// incandescence. Used for the white-hot bar tips at beat peaks.
+    static func whitened(_ color: Color, _ amount: Double) -> Color {
+        guard amount > 0 else { return color }
+        let k = min(1, amount)
+        let ns = NSColor(color).usingColorSpace(.deviceRGB) ?? NSColor(color)
+        var h: CGFloat = 0, s: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        ns.getHue(&h, saturation: &s, brightness: &b, alpha: &a)
+        return Color(hue: h, saturation: s * (1 - CGFloat(k)), brightness: b + (1 - b) * CGFloat(k))
     }
 
     /// Same hue and saturation, brightness scaled by `factor` (clamped) — used

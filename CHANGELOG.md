@@ -51,6 +51,9 @@ that had been hiding since the spectrum tap learned to hear non-music audio.
   skipped now), and closing braked to a near-standstill at every intermediate
   stage because the rests matched the spring's settling time. Each stage now
   retargets the spring while the silhouette is still moving.
+- Beat peaks overdrive a bar's tip (and its glow) toward white-hot, like a
+  VU meter pushed into the red — only levels above 70% reach it, so it reads
+  as energy, not as a palette change.
 - The spectrum got stage lighting: no more grey-washed edge bars (the Shades
   style is a full-saturation brightness ramp now), gradients run through up to
   three colors the cover actually contains, and every bar throws a glow that
