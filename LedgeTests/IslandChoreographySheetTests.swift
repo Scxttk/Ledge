@@ -213,6 +213,86 @@ final class IslandChoreographySheetTests: XCTestCase {
         return Walk(name: name, events: events, frames: frames)
     }
 
+    // MARK: Content lanes
+
+    /// Opacity/progress curves of the content layers during the *expand* walk,
+    /// modelled from the transition clocks in `NotchView`/`NotchLayout`. This
+    /// is where the "icon overlap" class of bug lives: the silhouette can be
+    /// perfectly smooth while two content layers paint over each other.
+    private struct ContentLane {
+        let label: String
+        let color: Color
+        let value: (Double) -> Double
+    }
+
+    private func easeIn(_ t: Double) -> Double { t <= 0 ? 0 : t >= 1 ? 1 : t * t }
+    private func easeOut(_ t: Double) -> Double { t <= 0 ? 0 : t >= 1 ? 1 : 1 - (1 - t) * (1 - t) }
+    private func easeInOut(_ t: Double) -> Double {
+        t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t)
+    }
+
+    /// The selected icon's flight from the capsule centre to its slot: driven
+    /// by the band hop's spring, retargeted by the final hop — same solver as
+    /// the silhouette.
+    private func flightCurve(bandTime: Double, expandedTime: Double, duration: Double) -> [Double] {
+        var track = SpringTrack(at: 0)
+        let dt = 1.0 / 240.0
+        var values: [Double] = []
+        var t = 0.0
+        while t <= duration {
+            if abs(t - bandTime) < dt / 2 {
+                track.retarget(0.8, response: Curve.expandHop.response, dampingFraction: Curve.expandHop.damping)
+            }
+            if abs(t - expandedTime) < dt / 2 {
+                track.retarget(1.0, response: Curve.expandFinal.response, dampingFraction: Curve.expandFinal.damping)
+            }
+            values.append(track.value)
+            track.step(dt)
+            t += dt
+        }
+        return values
+    }
+
+    private func expandLanes(for walk: Walk, hero: Bool) -> [ContentLane] {
+        let duration = walk.frames.last?.time ?? 1
+        let bandTime = walk.events.first { $0.state == .band }?.time ?? 0
+        let expandedTime = walk.events.first { $0.state == .expanded }?.time ?? 0
+
+        if hero {
+            // Hero: the whole tab bar crossfades in against the departing wave.
+            let fadeOut = NotchLayout.heroCrossfadeDuration
+            let delay = NotchLayout.heroCrossfadeInsertDelay
+            return [
+                ContentLane(label: "wave out", color: .orange) { [self] t in
+                    1 - easeInOut((t - bandTime) / fadeOut)
+                },
+                ContentLane(label: "tab bar in", color: .green) { [self] t in
+                    easeInOut((t - bandTime - delay) / fadeOut)
+                },
+            ]
+        }
+
+        // Idle: pill icon hands over to the (identical) tab icon, which then
+        // flies to its slot; the other tabs join once the flight is home.
+        let flight = flightCurve(bandTime: bandTime, expandedTime: expandedTime, duration: duration)
+        let holdEnd = NotchLayout.pillHandoverFade
+        let cut = NotchLayout.pillHandoverRemoveFade
+        let joinStart = bandTime + NotchLayout.tabJoinFadeDelay
+        let joinFade = 0.15  // condenseFadeAnimation
+        return [
+            ContentLane(label: "pill icon (ghost)", color: .red) { [self] t in
+                1 - easeIn((t - holdEnd) / cut)
+            },
+            ContentLane(label: "icon flight", color: .white) { t in
+                let index = Int(t * 240)
+                return index < flight.count ? flight[index] : 1
+            },
+            ContentLane(label: "other tabs", color: .green) { [self] t in
+                easeOut((t - joinStart) / joinFade)
+            },
+        ]
+    }
+
     // MARK: Rendering
 
     /// Width/height-vs-time plot with stage markers — pauses and kinks are
@@ -264,6 +344,52 @@ final class IslandChoreographySheetTests: XCTestCase {
                 Text("\(walk.name)   —   width (cyan) / height (orange), stage markers dashed")
                     .font(.system(size: 11, weight: .semibold)).foregroundStyle(.white),
                 at: CGPoint(x: padL, y: 10), anchor: .leading
+            )
+        }
+        .frame(width: plotW, height: plotH)
+    }
+
+    /// Opacity/progress lanes over time for the expand content choreography.
+    private func lanesView(for walk: Walk, lanes: [ContentLane]) -> some View {
+        let plotW = 860.0, plotH = 200.0, padL = 46.0, padR = 14.0, padT = 30.0, padB = 34.0
+        let duration = walk.frames.last?.time ?? 1
+        func x(_ t: Double) -> Double { padL + (plotW - padL - padR) * t / duration }
+        func y(_ v: Double) -> Double { padT + (plotH - padT - padB) * (1 - v) }
+
+        return Canvas { context, _ in
+            context.fill(Path(CGRect(x: 0, y: 0, width: plotW, height: plotH)), with: .color(.black))
+            for event in walk.events {
+                var line = Path()
+                line.move(to: CGPoint(x: x(event.time), y: padT - 4))
+                line.addLine(to: CGPoint(x: x(event.time), y: plotH - padB))
+                context.stroke(line, with: .color(.white.opacity(0.22)), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
+            }
+            var tick = 0.0
+            while tick <= duration {
+                context.draw(
+                    Text(String(format: "%.1f", tick)).font(.system(size: 8)).foregroundStyle(.white.opacity(0.5)),
+                    at: CGPoint(x: x(tick), y: plotH - padB + 10), anchor: .center
+                )
+                tick += 0.1
+            }
+            for (index, lane) in lanes.enumerated() {
+                var path = Path()
+                var t = 0.0
+                var first = true
+                while t <= duration {
+                    let p = CGPoint(x: x(t), y: y(lane.value(t)))
+                    if first { path.move(to: p); first = false } else { path.addLine(to: p) }
+                    t += 1.0 / 240.0
+                }
+                context.stroke(path, with: .color(lane.color), lineWidth: 1.6)
+                context.draw(
+                    Text(lane.label).font(.system(size: 10, weight: .semibold)).foregroundStyle(lane.color),
+                    at: CGPoint(x: padL + 4 + Double(index) * 150, y: 12), anchor: .leading
+                )
+            }
+            context.draw(
+                Text("\(walk.name) — content lanes").font(.system(size: 11, weight: .semibold)).foregroundStyle(.white),
+                at: CGPoint(x: padL, y: padT - 22), anchor: .leading
             )
         }
         .frame(width: plotW, height: plotH)
@@ -347,6 +473,38 @@ final class IslandChoreographySheetTests: XCTestCase {
             try write(plotView(for: walk), name: "plot-\(walk.name)")
             try write(filmstripView(for: walk), name: "strip-\(walk.name)")
             XCTAssertFalse(walk.frames.isEmpty)
+        }
+
+        // Content choreography on expand (the icon-overlap class of bug: the
+        // silhouette can be smooth while two content layers paint over each
+        // other — Scott saw the other tab icons appear under the still-flying
+        // selected icon).
+        let idleLanes = expandLanes(for: walks[2], hero: false)
+        let heroLanes = expandLanes(for: walks[0], hero: true)
+        try write(lanesView(for: walks[2], lanes: idleLanes), name: "lanes-expand-idle")
+        try write(lanesView(for: walks[0], lanes: heroLanes), name: "lanes-expand-hero")
+
+        let duration = walks[2].frames.last?.time ?? 1
+        var t = 0.0
+        while t <= duration {
+            // Idle: the departing pill icon must be gone before the other tabs
+            // start fading in, and the other tabs may only appear once the
+            // selected icon's flight is essentially home.
+            let ghost = idleLanes[0].value(t)
+            let flight = idleLanes[1].value(t)
+            let others = idleLanes[2].value(t)
+            if others > 0.01 {
+                XCTAssertEqual(ghost, 0, accuracy: 0.01,
+                    "t=\(t): pill ghost still visible while other tabs fade in")
+                XCTAssertGreaterThan(flight, 0.85,
+                    "t=\(t): other tabs fading in while the selected icon is still mid-flight")
+            }
+            // Hero: never two content layers strongly visible at once.
+            let waveOut = heroLanes[0].value(t)
+            let tabsIn = heroLanes[1].value(t)
+            XCTAssertFalse(waveOut > 0.8 && tabsIn > 0.8,
+                "t=\(t): wave and tab bar both near-opaque")
+            t += 1.0 / 120.0
         }
 
         // Quantitative stutter check alongside the pictures: the longest span

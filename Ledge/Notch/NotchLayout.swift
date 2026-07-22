@@ -154,18 +154,37 @@ enum NotchLayout {
     /// The arriving view fades in *on top* of the still-opaque departing one
     /// over this duration; the departing view only leaves once the newcomer is
     /// fully in (see `iconHandover`). Holding one layer opaque the whole time is
-    /// what kills the crossfade brightness dip — the "flicker".
-    static let pillHandoverFade: TimeInterval = 0.18
+    /// what kills the crossfade brightness dip — the "flicker". Deliberately
+    /// equal to the expand walk's time-to-`.band` (`condenseExpandDelay` +
+    /// `soloExpandDelay`): the hold-opaque trick only works while the two
+    /// icons sit superposed, and at `.band` the tab-bar icon starts flying to
+    /// its slot — the departing pill icon must cut exactly then, or it lingers
+    /// as a doubled glyph at the capsule centre.
+    static let pillHandoverFade: TimeInterval = 0.10
     /// Duration of the departing layer's cut once the newcomer is fully in (the
     /// removal side of `iconHandover`), after the `pillHandoverFade` delay.
-    static let pillHandoverRemoveFade: TimeInterval = 0.12
+    static let pillHandoverRemoveFade: TimeInterval = 0.08
+    /// Delay before the *unselected* tabs fade in once the band assembles on
+    /// expand. The selected icon travels from the capsule centre to its slot
+    /// during the band/final hops, passing over its neighbours' positions —
+    /// fading them in immediately painted them under the still-flying icon
+    /// (Scott: "voll die überlagerung"). Timed so the fade starts once the
+    /// flight is essentially home: the capsule leads, its content follows.
+    static let tabJoinFadeDelay: TimeInterval = 0.20
 
     /// When music plays, the collapse hands the tab bar off to the now-playing
     /// pill hero (cover + spectrum) at the `.solo` stage. Those two are *different*
-    /// content, so unlike `pillHandoverFade` this is a genuine symmetric crossfade
-    /// (both fade over the same clock) — a hold-opaque handover would show them
-    /// overlapping. Slightly longer for a smooth dissolve as the capsule narrows.
+    /// content, so unlike `pillHandoverFade` this is a genuine crossfade —
+    /// a hold-opaque handover would show them overlapping. Slightly longer
+    /// for a smooth dissolve as the capsule narrows.
     static let heroCrossfadeDuration: TimeInterval = 0.24
+    /// The arriving side of the hero crossfade starts this much later than the
+    /// departing side: the capsule is still springing toward the arriving
+    /// content's size when the handover fires, and fading the newcomer in at
+    /// full tilt painted it over the still-visible departing content inside a
+    /// too-small capsule. The silhouette leads, its content follows. The
+    /// departing fade covers this delay, so there is no empty-capsule gap.
+    static let heroCrossfadeInsertDelay: TimeInterval = 0.10
 
     /// Width of the collapsed pill while a live activity is showing.
     static let activityWidth: CGFloat = 220

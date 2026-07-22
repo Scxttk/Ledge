@@ -112,6 +112,23 @@ final class NotchWindowController {
         menuBarOverlapMonitor.notchLeftEdgeProvider = { [weak self] in self?.islandScreenRect(expanded: false)?.minX }
         menuBarOverlapMonitor.onChange = { [weak self] overlapping in self?.setMenuBarOverlap(overlapping) }
         menuBarOverlapMonitor.start()
+
+        // Remote control for visual verification: lets a screen-recording
+        // session drive the *staged* hover walk without a cursor (the capture
+        // hotkey path skips the stages on purpose, so it can't stand in).
+        // Post via:
+        //   osascript -l JavaScript -e 'ObjC.import("Foundation");
+        //     $.NSDistributedNotificationCenter.defaultCenter.postNotificationNameObjectUserInfoDeliverImmediately(
+        //       "com.scott.ledge.debug.island", "expand", $(), true)'
+        // Harmless surface: it only toggles the island's open state.
+        DistributedNotificationCenter.default().addObserver(
+            forName: Notification.Name("com.scott.ledge.debug.island"), object: nil, queue: .main
+        ) { [weak self] note in
+            guard let self else { return }
+            self.suppressHover = false
+            self.collapseWorkItem?.cancel()
+            self.setExpanded(note.object as? String == "expand")
+        }
     }
 
     deinit {

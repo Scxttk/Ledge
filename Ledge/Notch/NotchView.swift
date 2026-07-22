@@ -203,12 +203,18 @@ private extension AnyTransition {
         )
     }
 
-    /// Symmetric cross-dissolve used when music plays and the tab bar hands off
-    /// to the now-playing pill hero (cover + spectrum) at the `.solo` stage.
-    /// Both sides fade over the same clock so the tab bar melts into the hero as
-    /// the capsule narrows — no overlap, since the two are different content.
+    /// Cross-dissolve used when music plays and the tab bar hands off to the
+    /// now-playing pill hero (cover + spectrum) — in both directions. The
+    /// arriving side starts slightly later (`heroCrossfadeInsertDelay`) so the
+    /// capsule has begun growing toward its size before its content fades in;
+    /// the departing side's fade covers the delay, so nothing shows empty.
     static var heroCrossfade: AnyTransition {
-        .opacity.animation(.easeInOut(duration: NotchLayout.heroCrossfadeDuration))
+        .asymmetric(
+            insertion: .opacity.animation(
+                .easeInOut(duration: NotchLayout.heroCrossfadeDuration)
+                    .delay(NotchLayout.heroCrossfadeInsertDelay)),
+            removal: .opacity.animation(.easeInOut(duration: NotchLayout.heroCrossfadeDuration))
+        )
     }
 }
 
@@ -453,7 +459,15 @@ private struct NotchTabBar: View {
                 .foregroundStyle(.white.opacity(isSelected ? 1 : NotchLayout.tabInactiveOpacity))
             }
             .buttonStyle(.plain)
-            .transition(.opacity.animation(NotchLayout.condenseFadeAnimation))
+            // Insertion waits for the selected icon's flight to its slot to
+            // finish (it crosses the other tabs' positions on the way);
+            // removal on collapse stays immediate — the capsule narrows fast
+            // and lingering neighbours would get clipped against its rim.
+            .transition(.asymmetric(
+                insertion: .opacity.animation(
+                    NotchLayout.condenseFadeAnimation.delay(NotchLayout.tabJoinFadeDelay)),
+                removal: .opacity.animation(NotchLayout.condenseFadeAnimation)
+            ))
         }
     }
 }
